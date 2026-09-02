@@ -1,280 +1,362 @@
-"""
-Datadog Client - Wrapper for Datadog API interactions.
-"""
+import logging
+import time
+from typing import Any, Dict, List, Optional
 
 import requests
-import json
-from typing import Any, Dict, List, Optional
-from logger import get_logger
-from config import DATADOG_API_KEY, DATADOG_APP_KEY, DATADOG_BASE_URL, DRY_RUN
 
-logger = get_logger('datadog.client')
+from config import (
+    DATADOG_API_KEY,
+    DATADOG_APP_KEY,
+    DATADOG_SITE,
+    HISTORICAL_LOOKBACK_DAYS,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class DatadogClient:
-    """Client for interacting with Datadog API."""
+    """
+    Client for interacting with Datadog APIs.
 
-    def __init__(self, api_key: str = DATADOG_API_KEY, app_key: str = DATADOG_APP_KEY):
-        """
-        Initialize Datadog client.
+    Supports:
+    - Sending events
+    - Sending metrics
+    - Querying historical events
+    - Querying logs
+    - Retrieving previous test executions
+    - Health checking Datadog connectivity
+    """
 
-        Args:
-            api_key: Datadog API key
-            app_key: Datadog app key
-        """
-        self.api_key = api_key
-        self.app_key = app_key
-        self.base_url = DATADOG_BASE_URL
-        self.logger = logger
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        app_key: Optional[str] = None,
+        site: Optional[str] = None,
+    ):
+        self.api_key = api_key or DATADOG_API_KEY
+        self.app_key = app_key or DATADOG_APP_KEY
+        self.site = site or DATADOG_SITE
+
+        self.base_url = f"https://api.{self.site}"
+
         self.session = requests.Session()
 
-    def _headers(self) -> Dict[str, str]:
-        """Get headers for Datadog API requests."""
-        return {
-            'DD-API-KEY': self.api_key,
-            'DD-APPLICATION-KEY': self.app_key,
-            'Content-Type': 'application/json',
-        }
+        self.session.headers.update(
+            {
+                "DD-API-KEY": self.api_key,
+                "DD-APPLICATION-KEY": self.app_key,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+        )
 
-    def send_event(self, event: Dict[str, Any]) -> bool:
+        logger.info("Datadog client initialized for site: %s", self.site)
+
+    # ------------------------------------------------------------------
+    # Events
+    # ------------------------------------------------------------------
+
+    def send_event(
+        self,
+        title: str,
+        text: str,
+        tags: Optional[List[str]] = None,
+        alert_type: str = "info",
+    ) -> bool:
         """
         Send an event to Datadog.
-
-        Args:
-            event: Event dictionary with title, text, tags, etc.
-
-        Returns:
-            True if successful
         """
+
+        url = f"{self.base_url}/api/v1/events"
+
+        payload = {
+            "title": title,
+            "text": text,
+            "tags": tags or [],
+            "alert_type": alert_type,
+        }
+
         try:
-            if DRY_RUN:
-                self.logger.info(f"[DRY RUN] Would send event: {event['title']}")
-                return True
-
-            url = f"{self.base_url}/api/v1/events"
-            payload = {
-                'title': event.get('title', ''),
-                'text': event.get('text', ''),
-                'tags': event.get('tags', []),
-                'alert_type': event.get('alert_type', 'info'),
-            }
-
             response = self.session.post(
                 url,
-                headers=self._headers(),
                 json=payload,
-                timeout=30
+                timeout=30,
             )
 
-            if response.status_code in [200, 201]:
-                self.logger.debug(f"Event sent successfully: {event['title']}")
+            if response.status_code in (200, 202):
+                logger.debug("Datadog event sent successfully")
                 return True
-            else:
-                self.logger.error(
-                    f"Failed to send event: {response.status_code} - {response.text}"
-                )
-                return False
 
-        except requests.exceptions.RequestException as e:
-            self.logger.error(f"Request error sending event: {e}")
-            return False
-        except Exception as e:
-            self.logger.error(f"Unexpected error sending event: {e}")
+            logger.error(
+                "Failed to send Datadog event: %s - %s",
+                response.status_code,
+                response.text,
+            )
             return False
 
-    def send_metrics(self, metrics: List[Dict[str, Any]]) -> bool:
-        """
-        Send multiple metrics to Datadog.
+        except requests.RequestException as exc:
+            logger.error("Error sending Datadog event: %s", exc)
+            return False
 
-        Args:
-            metrics: List of metric dictionaries
+    # ------------------------------------------------------------------
+    # Metrics
+    # ------------------------------------------------------------------
 
-        Returns:
-            True if successful
+    def send_metrics(self, series: List[Dict[str, Any]]) -> bool:
         """
+        Send metrics to Datadog.
+
+        `series` should contain Datadog metric series payloads.
+        """
+
+        url = f"{self.base_url}/api/v1/series"
+
+        payload = {
+            "series": series,
+        }
+
         try:
-            if DRY_RUN:
-                self.logger.info(f"[DRY RUN] Would send {len(metrics)} metrics")
-                return True
-
-            url = f"{self.base_url}/api/v1/series"
-            payload = {'series': metrics}
-
             response = self.session.post(
                 url,
-                headers=self._headers(),
                 json=payload,
-                timeout=30
+                timeout=30,
             )
 
-            if response.status_code in [200, 201]:
-                self.logger.debug(f"Sent {len(metrics)} metrics successfully")
-                return True
-            else:
-                self.logger.error(
-                    f"Failed to send metrics: {response.status_code} - {response.text}"
+            if response.status_code in (200, 202):
+                logger.debug(
+                    "Datadog metrics sent successfully: %d series",
+                    len(series),
                 )
-                return False
+                return True
 
-        except requests.exceptions.RequestException as e:
-            self.logger.error(f"Request error sending metrics: {e}")
+            logger.error(
+                "Failed to send Datadog metrics: %s - %s",
+                response.status_code,
+                response.text,
+            )
             return False
-        except Exception as e:
-            self.logger.error(f"Unexpected error sending metrics: {e}")
+
+        except requests.RequestException as exc:
+            logger.error("Error sending Datadog metrics: %s", exc)
             return False
+
+    # ------------------------------------------------------------------
+    # Historical Events
+    # ------------------------------------------------------------------
 
     def query_events(
         self,
         query: str,
-        page_size: int = 10,
-        sort: str = 'timestamp_desc'
-    ) -> Optional[List[Dict[str, Any]]]:
+        page_size: int = 100,
+        sort: str = "timestamp_desc",
+    ) -> List[Dict[str, Any]]:
         """
-        Query events from Datadog.
+        Query historical Datadog events.
 
-        Args:
-            query: Datadog query string (e.g., 'tags:"service:customer"')
-            page_size: Number of events to retrieve
-            sort: Sort order (e.g., 'timestamp_desc')
-
-        Returns:
-            List of events or None if error
+        Datadog requires `start` and `end` timestamps for the events API.
+        The configured HISTORICAL_LOOKBACK_DAYS value controls how far
+        back we search.
         """
+
+        url = f"{self.base_url}/api/v1/events"
+
+        end_time = int(time.time())
+
+        start_time = end_time - (
+            HISTORICAL_LOOKBACK_DAYS * 24 * 60 * 60
+        )
+
+        params = {
+            "start": start_time,
+            "end": end_time,
+            "query": query,
+            "page_size": page_size,
+            "sort": sort,
+        }
+
+        logger.debug(
+            "Querying Datadog events from %s to %s",
+            start_time,
+            end_time,
+        )
+
         try:
-            url = f"{self.base_url}/api/v1/events"
-            params = {
-                'query': query,
-                'page_size': page_size,
-                'sort': sort,
-            }
-
             response = self.session.get(
                 url,
-                headers=self._headers(),
                 params=params,
-                timeout=30
+                timeout=30,
             )
 
-            if response.status_code == 200:
-                data = response.json()
-                events = data.get('events', [])
-                self.logger.debug(f"Retrieved {len(events)} events")
-                return events
-            else:
-                self.logger.error(
-                    f"Failed to query events: {response.status_code} - {response.text}"
+            if response.status_code != 200:
+                logger.error(
+                    "Failed to query events: %s - %s",
+                    response.status_code,
+                    response.text,
                 )
-                return None
+                return []
 
-        except requests.exceptions.RequestException as e:
-            self.logger.error(f"Request error querying events: {e}")
-            return None
-        except Exception as e:
-            self.logger.error(f"Unexpected error querying events: {e}")
-            return None
+            data = response.json()
+
+            events = data.get("events", [])
+
+            logger.debug(
+                "Retrieved %d Datadog events",
+                len(events),
+            )
+
+            return events
+
+        except requests.RequestException as exc:
+            logger.error("Error querying Datadog events: %s", exc)
+            return []
+
+        except ValueError as exc:
+            logger.error(
+                "Invalid JSON returned from Datadog events API: %s",
+                exc,
+            )
+            return []
+
+    # ------------------------------------------------------------------
+    # Logs
+    # ------------------------------------------------------------------
 
     def query_logs(
         self,
         query: str,
-        limit: int = 100
-    ) -> Optional[List[Dict[str, Any]]]:
+        from_time: Optional[str] = None,
+        to_time: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
         """
-        Query logs from Datadog.
+        Query Datadog logs.
 
-        Args:
-            query: Datadog logs query
-            limit: Maximum number of logs to retrieve
-
-        Returns:
-            List of logs or None if error
+        `from_time` and `to_time` should be ISO-8601 timestamps.
         """
+
+        url = f"{self.base_url}/api/v2/logs/events/search"
+
+        payload: Dict[str, Any] = {
+            "filter": {
+                "query": query,
+            },
+            "page": {
+                "limit": limit,
+            },
+        }
+
+        if from_time:
+            payload["filter"]["from"] = from_time
+
+        if to_time:
+            payload["filter"]["to"] = to_time
+
         try:
-            url = f"{self.base_url}/api/v2/logs/events/search"
-            payload = {
-                'filter': {
-                    'query': query,
-                },
-                'page': {
-                    'limit': limit,
-                },
-                'sort': 'timestamp',
-            }
-
             response = self.session.post(
                 url,
-                headers=self._headers(),
                 json=payload,
-                timeout=30
+                timeout=30,
             )
 
-            if response.status_code == 200:
-                data = response.json()
-                logs = data.get('data', [])
-                self.logger.debug(f"Retrieved {len(logs)} logs")
-                return logs
-            else:
-                self.logger.error(
-                    f"Failed to query logs: {response.status_code} - {response.text}"
+            if response.status_code != 200:
+                logger.error(
+                    "Failed to query logs: %s - %s",
+                    response.status_code,
+                    response.text,
                 )
-                return None
+                return []
 
-        except requests.exceptions.RequestException as e:
-            self.logger.error(f"Request error querying logs: {e}")
-            return None
-        except Exception as e:
-            self.logger.error(f"Unexpected error querying logs: {e}")
-            return None
+            data = response.json()
+
+            return data.get("data", [])
+
+        except requests.RequestException as exc:
+            logger.error("Error querying Datadog logs: %s", exc)
+            return []
+
+        except ValueError as exc:
+            logger.error(
+                "Invalid JSON returned from Datadog logs API: %s",
+                exc,
+            )
+            return []
+
+    # ------------------------------------------------------------------
+    # Previous Test Executions
+    # ------------------------------------------------------------------
 
     def get_previous_executions(
         self,
         service: str,
         test: str,
-        limit: int = 10
-    ) -> Optional[List[Dict[str, Any]]]:
+        limit: int = 10,
+    ) -> List[Dict[str, Any]]:
         """
-        Get previous executions for a specific service/test.
+        Retrieve previous executions of a specific API test.
 
-        Args:
-            service: Service name
-            test: Test name
-            limit: Number of previous executions to retrieve
-
-        Returns:
-            List of previous execution events or None if error
+        Events are identified using the tags:
+            service:<service>
+            test:<test>
         """
-        try:
-            query = f'tags:"service:{service.lower()}" AND tags:"test:{test.lower()}"'
-            events = self.query_events(query, page_size=limit + 1, sort='timestamp_desc')
 
-            if events is None:
-                return None
+        query = (
+            f'tags:"service:{service.lower()}" '
+            f'AND tags:"test:{test.lower()}"'
+        )
 
-            # Skip the first event (current execution) if we have more than limit
-            if len(events) > limit:
-                events = events[1:]
+        logger.debug(
+            "Searching historical executions for service=%s, test=%s",
+            service,
+            test,
+        )
 
-            return events[:limit]
+        events = self.query_events(
+            query=query,
+            page_size=limit + 1,
+            sort="timestamp_desc",
+        )
 
-        except Exception as e:
-            self.logger.error(f"Error getting previous executions: {e}")
-            return None
+        # The most recent event can represent the current execution,
+        # depending on when the historical query is performed.
+        #
+        # Keep the existing behavior of ignoring the first result when
+        # more than `limit` results are returned.
+        if len(events) > limit:
+            events = events[1:]
+
+        return events[:limit]
+
+    # ------------------------------------------------------------------
+    # Health Check
+    # ------------------------------------------------------------------
 
     def health_check(self) -> bool:
         """
-        Check if Datadog API is accessible.
-
-        Returns:
-            True if API is accessible
+        Check whether Datadog API credentials/connectivity are working.
         """
+
+        url = f"{self.base_url}/api/v1/validate"
+
         try:
-            url = f"{self.base_url}/api/v1/validate"
             response = self.session.get(
                 url,
-                headers=self._headers(),
-                timeout=10
+                timeout=15,
             )
-            return response.status_code == 200
 
-        except Exception as e:
-            self.logger.error(f"Datadog health check failed: {e}")
+            if response.status_code == 200:
+                logger.info("Datadog health check successful")
+                return True
+
+            logger.error(
+                "Datadog health check failed: %s - %s",
+                response.status_code,
+                response.text,
+            )
+            return False
+
+        except requests.RequestException as exc:
+            logger.error(
+                "Datadog health check error: %s",
+                exc,
+            )
             return False

@@ -1,211 +1,363 @@
-"""
-Failure Pattern Classification Rules - Configurable thresholds for classification.
-"""
+import logging
+from typing import Any, Dict, List
 
-from dataclasses import dataclass
-from typing import List, Tuple
 from config import (
-    FAILURE_PERSISTENT_THRESHOLD,
-    FAILURE_FLAKY_MIN_ALTERNATIONS,
+    FLAKY_THRESHOLD,
+    PERSISTENT_FAILURE_THRESHOLD,
 )
 
-# Classification thresholds (all deterministic, configurable)
-
-PERSISTENT_FAILURE_THRESHOLD = FAILURE_PERSISTENT_THRESHOLD
-"""Failure rate threshold for persistent failures (default: 70%)"""
-
-FLAKY_MIN_ALTERNATIONS = FAILURE_FLAKY_MIN_ALTERNATIONS
-"""Minimum alternations between PASS/FAIL for flaky classification (default: 2)"""
-
-NEW_FAILURE_LOOKBACK = 5
-"""Number of previous executions to check for baseline when detecting new failures"""
-
-HEALTHY_THRESHOLD = 0.90
-"""Pass rate threshold for healthy classification (default: 90%)"""
-
-RESOLVED_LOOKBACK = 10
-"""Recent failure threshold for resolved classification"""
-
-
-@dataclass
-class ClassificationResult:
-    """Result of failure pattern classification."""
-    pattern: str  # Healthy, New Failure, Persistent, Flaky, Resolved
-    failure_percentage: float
-    pass_count: int
-    fail_count: int
-    confidence: float  # 0.0 to 1.0
-    reasoning: str
-
-
-def calculate_failure_percentage(pass_count: int, fail_count: int) -> float:
-    """Calculate failure percentage."""
-    total = pass_count + fail_count
-    if total == 0:
-        return 0.0
-    return fail_count / total
-
-
-def count_alternations(statuses: List[str]) -> int:
-    """Count alternations between PASS and FAIL in a sequence."""
-    if len(statuses) <= 1:
-        return 0
-    alternations = 0
-    for i in range(len(statuses) - 1):
-        if statuses[i] != statuses[i + 1]:
-            alternations += 1
-    return alternations
+logger = logging.getLogger(__name__)
 
 
 def classify_failure_pattern(
     current_status: str,
-    historical_statuses: List[str],  # Previous executions in reverse chronological order
-) -> ClassificationResult:
+    historical_data: Any = None,
+) -> Dict[str, Any]:
     """
-    Classify failure pattern using deterministic rules.
+    Classify the current API test result based on its current
+    status and historical execution pattern.
 
-    Args:
-        current_status: Current execution status (PASS or FAIL)
-        historical_statuses: List of previous execution statuses (most recent first)
+    Classification priority:
 
-    Returns:
-        ClassificationResult with pattern and reasoning
+    1. Persistent Failure
+    2. Flaky
+    3. Resolved Failure
+    4. New Failure
+    5. Healthy
+    6. Unknown
     """
 
-    if not historical_statuses:
-        # No history, classify based on current status
-        if current_status == 'PASS':
-            return ClassificationResult(
-                pattern='Healthy',
-                failure_percentage=0.0,
-                pass_count=1,
-                fail_count=0,
-                confidence=0.5,
-                reasoning='No historical data; current status is PASS'
-            )
-        else:
-            return ClassificationResult(
-                pattern='New Failure',
-                failure_percentage=1.0,
-                pass_count=0,
-                fail_count=1,
-                confidence=0.5,
-                reasoning='No historical data; current status is FAIL'
-            )
+    current_status = str(
+        current_status or "UNKNOWN"
+    ).upper()
 
-    # Calculate statistics
-    total_historical = len(historical_statuses)
-    fail_count = sum(1 for s in historical_statuses if s == 'FAIL')
-    pass_count = total_historical - fail_count
-    failure_percentage = calculate_failure_percentage(pass_count, fail_count)
-    alternations = count_alternations(historical_statuses)
-
-    # Rule 1: Persistent Failure (high failure rate)
-    if failure_percentage >= PERSISTENT_FAILURE_THRESHOLD:
-        return ClassificationResult(
-            pattern='Persistent Failure',
-            failure_percentage=failure_percentage,
-            pass_count=pass_count,
-            fail_count=fail_count,
-            confidence=0.95,
-            reasoning=(
-                f"High failure rate: {fail_count}/{total_historical} "
-                f"({failure_percentage*100:.1f}%)"
-            )
-        )
-
-    # Rule 2: Flaky Failure (multiple alternations)
-    if alternations >= FLAKY_MIN_ALTERNATIONS:
-        return ClassificationResult(
-            pattern='Flaky Failure',
-            failure_percentage=failure_percentage,
-            pass_count=pass_count,
-            fail_count=fail_count,
-            confidence=0.85,
-            reasoning=(
-                f"Multiple alternations between PASS/FAIL "
-                f"({alternations} alternations in {total_historical} executions)"
-            )
-        )
-
-    # Rule 3: Resolved Failure (was failing, now passing)
-    if current_status == 'PASS' and fail_count > 0:
-        return ClassificationResult(
-            pattern='Resolved Failure',
-            failure_percentage=failure_percentage,
-            pass_count=pass_count,
-            fail_count=fail_count,
-            confidence=0.90,
-            reasoning=(
-                f"Previously had failures ({fail_count} in history), "
-                f"but current execution passed"
-            )
-        )
-
-    # Rule 4: New Failure (was passing, now failing)
-    if current_status == 'FAIL' and pass_count >= NEW_FAILURE_LOOKBACK:
-        # Check if baseline was healthy (mostly passing)
-        return ClassificationResult(
-            pattern='New Failure',
-            failure_percentage=failure_percentage,
-            pass_count=pass_count,
-            fail_count=fail_count,
-            confidence=0.90,
-            reasoning=(
-                f"Most recent executions were passing "
-                f"({pass_count} passes, {fail_count} failures), "
-                f"but current execution failed"
-            )
-        )
-
-    # Rule 5: Healthy (currently passing, low failure rate)
-    if current_status == 'PASS' and failure_percentage < (1 - HEALTHY_THRESHOLD):
-        return ClassificationResult(
-            pattern='Healthy',
-            failure_percentage=failure_percentage,
-            pass_count=pass_count,
-            fail_count=fail_count,
-            confidence=0.95,
-            reasoning=(
-                f"Low failure rate ({failure_percentage*100:.1f}%), "
-                f"current status is PASS"
-            )
-        )
-
-    # Default: Healthy if mostly passing
-    if failure_percentage < (1 - HEALTHY_THRESHOLD):
-        return ClassificationResult(
-            pattern='Healthy',
-            failure_percentage=failure_percentage,
-            pass_count=pass_count,
-            fail_count=fail_count,
-            confidence=0.80,
-            reasoning=(
-                f"Overall pass rate is acceptable "
-                f"({pass_count}/{total_historical}, {(1-failure_percentage)*100:.1f}%)"
-            )
-        )
-
-    # If we get here and current is failing, it's a new failure
-    if current_status == 'FAIL':
-        return ClassificationResult(
-            pattern='New Failure',
-            failure_percentage=failure_percentage,
-            pass_count=pass_count,
-            fail_count=fail_count,
-            confidence=0.70,
-            reasoning=(
-                f"Current execution failed with moderate historical failure rate "
-                f"({failure_percentage*100:.1f}%)"
-            )
-        )
-
-    # Otherwise healthy
-    return ClassificationResult(
-        pattern='Healthy',
-        failure_percentage=failure_percentage,
-        pass_count=pass_count,
-        fail_count=fail_count,
-        confidence=0.70,
-        reasoning='Current status is PASS with acceptable historical failure rate'
+    history = _normalize_history(
+        historical_data
     )
+
+    statuses = history["statuses"]
+    total_executions = history["total_executions"]
+    passed = history["passed"]
+    failed = history["failed"]
+    failure_rate = history["failure_rate"]
+
+    logger.debug(
+        "Classifying test: current=%s, total=%d, "
+        "passed=%d, failed=%d, failure_rate=%.2f",
+        current_status,
+        total_executions,
+        passed,
+        failed,
+        failure_rate,
+    )
+
+    # ---------------------------------------------------------
+    # No historical data
+    # ---------------------------------------------------------
+
+    if total_executions == 0:
+        if current_status == "FAIL":
+            return _classification(
+                "New Failure",
+                "The test is currently failing and there is no "
+                "historical execution data available.",
+                current_status,
+                history,
+            )
+
+        if current_status == "PASS":
+            return _classification(
+                "Healthy",
+                "The test is passing and there is no historical "
+                "failure pattern.",
+                current_status,
+                history,
+            )
+
+        return _classification(
+            "Unknown",
+            "The current test status could not be classified.",
+            current_status,
+            history,
+        )
+
+    # ---------------------------------------------------------
+    # Persistent failure
+    # ---------------------------------------------------------
+
+    if (
+        current_status == "FAIL"
+        and failure_rate >= PERSISTENT_FAILURE_THRESHOLD
+    ):
+        return _classification(
+            "Persistent Failure",
+            (
+                "The test has a consistently high historical "
+                "failure rate."
+            ),
+            current_status,
+            history,
+        )
+
+    # ---------------------------------------------------------
+    # Flaky test
+    # ---------------------------------------------------------
+
+    if _is_flaky(statuses):
+        return _classification(
+            "Flaky",
+            (
+                "The test has repeatedly changed between PASS "
+                "and FAIL across historical executions."
+            ),
+            current_status,
+            history,
+        )
+
+    # ---------------------------------------------------------
+    # Resolved failure
+    # ---------------------------------------------------------
+
+    if (
+        current_status == "PASS"
+        and failed > 0
+    ):
+        return _classification(
+            "Resolved Failure",
+            (
+                "The test is currently passing after having "
+                "failed in previous executions."
+            ),
+            current_status,
+            history,
+        )
+
+    # ---------------------------------------------------------
+    # New failure
+    # ---------------------------------------------------------
+
+    if (
+        current_status == "FAIL"
+        and passed >= 5
+    ):
+        return _classification(
+            "New Failure",
+            (
+                "The test is currently failing after a history "
+                "dominated by successful executions."
+            ),
+            current_status,
+            history,
+        )
+
+    # ---------------------------------------------------------
+    # Healthy
+    # ---------------------------------------------------------
+
+    if (
+        current_status == "PASS"
+        and failure_rate < 0.10
+    ):
+        return _classification(
+            "Healthy",
+            (
+                "The test is passing and has a low historical "
+                "failure rate."
+            ),
+            current_status,
+            history,
+        )
+
+    # ---------------------------------------------------------
+    # Current failure without enough evidence for another type
+    # ---------------------------------------------------------
+
+    if current_status == "FAIL":
+        return _classification(
+            "New Failure",
+            (
+                "The test is currently failing, but the available "
+                "history does not indicate a persistent or flaky "
+                "pattern."
+            ),
+            current_status,
+            history,
+        )
+
+    if current_status == "PASS":
+        return _classification(
+            "Healthy",
+            (
+                "The test is currently passing, but the historical "
+                "data does not meet the criteria for another pattern."
+            ),
+            current_status,
+            history,
+        )
+
+    return _classification(
+        "Unknown",
+        "Unable to determine a failure pattern.",
+        current_status,
+        history,
+    )
+
+
+def _normalize_history(
+    historical_data: Any,
+) -> Dict[str, Any]:
+    """
+    Normalize historical data coming from HistoricalAnalyzer.
+
+    Supports both:
+      - dictionary-based history
+      - simple list of statuses
+      - None
+    """
+
+    if historical_data is None:
+        statuses: List[str] = []
+
+    elif isinstance(historical_data, list):
+        statuses = [
+            _normalize_status(status)
+            for status in historical_data
+        ]
+
+    elif isinstance(historical_data, dict):
+        raw_statuses = historical_data.get(
+            "statuses",
+            [],
+        )
+
+        if isinstance(raw_statuses, list):
+            statuses = [
+                _normalize_status(status)
+                for status in raw_statuses
+            ]
+        else:
+            statuses = []
+
+    else:
+        statuses = []
+
+    statuses = [
+        status
+        for status in statuses
+        if status in {"PASS", "FAIL"}
+    ]
+
+    total_executions = len(statuses)
+    passed = statuses.count("PASS")
+    failed = statuses.count("FAIL")
+
+    if total_executions > 0:
+        failure_rate = failed / total_executions
+        pass_rate = passed / total_executions
+    else:
+        failure_rate = 0.0
+        pass_rate = 0.0
+
+    return {
+        "statuses": statuses,
+        "total_executions": total_executions,
+        "passed": passed,
+        "failed": failed,
+        "failure_rate": failure_rate,
+        "pass_rate": pass_rate,
+    }
+
+
+def _normalize_status(
+    status: Any,
+) -> str:
+    """
+    Normalize PASS/FAIL values.
+    """
+
+    value = str(
+        status or ""
+    ).strip().upper()
+
+    if value in {
+        "PASS",
+        "PASSED",
+        "SUCCESS",
+        "SUCCEEDED",
+        "OK",
+    }:
+        return "PASS"
+
+    if value in {
+        "FAIL",
+        "FAILED",
+        "ERROR",
+        "FAILURE",
+    }:
+        return "FAIL"
+
+    return value
+
+
+def _is_flaky(
+    statuses: List[str],
+) -> bool:
+    """
+    Determine whether the historical sequence is flaky.
+
+    A test is considered flaky when it has at least
+    FLAKY_THRESHOLD status transitions.
+
+    Example:
+
+        PASS -> FAIL -> PASS
+
+    has two transitions and is therefore flaky when
+    FLAKY_THRESHOLD is 2.
+    """
+
+    if len(statuses) < 2:
+        return False
+
+    transitions = 0
+
+    for index in range(1, len(statuses)):
+        if statuses[index] != statuses[index - 1]:
+            transitions += 1
+
+    return transitions >= FLAKY_THRESHOLD
+
+
+def _classification(
+    name: str,
+    reason: str,
+    current_status: str,
+    history: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Build a consistent classification response.
+    """
+
+    return {
+        "classification": name,
+        "reason": reason,
+        "current_status": current_status,
+        "historical_executions": history[
+            "total_executions"
+        ],
+        "historical_passed": history[
+            "passed"
+        ],
+        "historical_failed": history[
+            "failed"
+        ],
+        "historical_failure_rate": history[
+            "failure_rate"
+        ],
+        "historical_pass_rate": history[
+            "pass_rate"
+        ],
+        "statuses": history[
+            "statuses"
+        ],
+    }

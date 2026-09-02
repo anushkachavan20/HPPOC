@@ -1,214 +1,115 @@
-import http from 'k6/http';
-import { check, sleep, group } from 'k6';
-import { Counter, Trend } from 'k6/metrics';
-import { randomString } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
+import http from "k6/http";
+import { check, group } from "k6";
 
-// Custom metrics
-const successCounter = new Counter('payment_successful_requests');
-const failureCounter = new Counter('payment_failed_requests');
-const requestDuration = new Trend('payment_request_duration');
-
-// Base URL for testing
-const BASE_URL = __ENV.BASE_URL || 'https://httpbin.org';
+/*
+ * Service 3: httpbin
+ *
+ * Purpose:
+ * - Use a real public HTTP testing service
+ * - GET requests only
+ * - No fake business data
+ * - No request bodies
+ * - No create/update/delete operations
+ * - Include a controlled HTTP 500 failure
+ *
+ * The Python parser determines PASS/FAIL from HTTP status:
+ *
+ * 2xx / 3xx -> PASS
+ * 4xx / 5xx -> FAIL
+ */
 
 export const options = {
-  stages: [
-    { duration: '5s', target: 2 },   // Ramp up
-    { duration: '10s', target: 2 },  // Stay at 2 VUs
-    { duration: '5s', target: 0 },   // Ramp down
-  ],
-  thresholds: {
-    'http_req_duration': ['p(95)<2000'],
-  },
+    vus: 1,
+    iterations: 1,
 };
 
-// Generate execution ID
-const executionId = `gh_run_${Date.now()}`;
-
-// Result collector
-const results = [];
+const BASE_URL = "https://httpbin.org";
 
 export default function () {
-  group('Payment Service - CreatePayment', () => {
-    const payload = JSON.stringify({
-      order_id: `ORD_${randomString(6)}`,
-      amount: (Math.random() * 500 + 50).toFixed(2),
-      currency: 'USD',
-      method: 'credit_card',
-      card_last4: '4242',
+
+    // =========================================================
+    // API 1 - Basic GET
+    //
+    // Expected: 200
+    // =========================================================
+
+    group("HTTPBin Service - Get", function () {
+
+        const response = http.get(
+            `${BASE_URL}/get`,
+            {
+                tags: {
+                    service: "httpbin",
+                    test: "Get",
+                    expected_status: "200",
+                },
+            }
+        );
+
+        check(response, {
+            "Get - HTTP 200": (r) =>
+                r.status === 200,
+        });
     });
 
-    const params = {
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Test-Service': 'payment',
-        'X-Test-Name': 'CreatePayment',
-      },
-    };
+    // =========================================================
+    // API 2 - UUID endpoint
+    //
+    // Expected: 200
+    //
+    // The server generates the UUID.
+    // We are not sending any fake data.
+    // =========================================================
 
-    const res = http.post(`${BASE_URL}/post`, payload, params);
-    const success = check(res, {
-      'status is 200': (r) => r.status === 200,
-      'response time < 2000ms': (r) => r.timings.duration < 2000,
+    group("HTTPBin Service - UUID", function () {
+
+        const response = http.get(
+            `${BASE_URL}/uuid`,
+            {
+                tags: {
+                    service: "httpbin",
+                    test: "UUID",
+                    expected_status: "200",
+                },
+            }
+        );
+
+        check(response, {
+            "UUID - HTTP 200": (r) =>
+                r.status === 200,
+        });
     });
 
-    requestDuration.add(res.timings.duration);
+    // =========================================================
+    // API 3 - Intentional HTTP 500
+    //
+    // httpbin provides an endpoint specifically for returning
+    // a requested HTTP status.
+    //
+    // No business data is created, modified, or deleted.
+    // =========================================================
 
-    if (success) {
-      successCounter.add(1);
-    } else {
-      failureCounter.add(1);
-    }
+    group("HTTPBin Service - ServerError", function () {
 
-    results.push({
-      service: 'Payment',
-      test_name: 'CreatePayment',
-      method: 'POST',
-      endpoint: '/payments',
-      status: success ? 'PASS' : 'FAIL',
-      http_status: res.status,
-      duration_ms: res.timings.duration,
-      error: success ? null : `Status ${res.status}`,
-      response_body: res.body.substring(0, 200),
-      timestamp: new Date().toISOString(),
+        const response = http.get(
+            `${BASE_URL}/status/500`,
+            {
+                tags: {
+                    service: "httpbin",
+                    test: "ServerError",
+                    expected_status: "500",
+                    failure_type: "server_error",
+                },
+            }
+        );
+
+        check(response, {
+            "ServerError - HTTP 500": (r) =>
+                r.status === 500,
+        });
+
+        console.log(
+            `HTTPBin ServerError response: HTTP ${response.status}`
+        );
     });
-
-    sleep(1);
-  });
-
-  group('Payment Service - GetPayment', () => {
-    const params = {
-      headers: {
-        'X-Test-Service': 'payment',
-        'X-Test-Name': 'GetPayment',
-      },
-    };
-
-    const res = http.get(`${BASE_URL}/get?payment_id=789`, params);
-    const success = check(res, {
-      'status is 200': (r) => r.status === 200,
-      'response time < 1000ms': (r) => r.timings.duration < 1000,
-    });
-
-    requestDuration.add(res.timings.duration);
-
-    if (success) {
-      successCounter.add(1);
-    } else {
-      failureCounter.add(1);
-    }
-
-    results.push({
-      service: 'Payment',
-      test_name: 'GetPayment',
-      method: 'GET',
-      endpoint: '/payments/{id}',
-      status: success ? 'PASS' : 'FAIL',
-      http_status: res.status,
-      duration_ms: res.timings.duration,
-      error: success ? null : `Status ${res.status}`,
-      response_body: res.body.substring(0, 200),
-      timestamp: new Date().toISOString(),
-    });
-
-    sleep(1);
-  });
-
-  group('Payment Service - RefundPayment', () => {
-    const payload = JSON.stringify({
-      payment_id: `PAY_${randomString(6)}`,
-      reason: 'Customer request',
-      amount: (Math.random() * 100 + 10).toFixed(2),
-    });
-
-    const params = {
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Test-Service': 'payment',
-        'X-Test-Name': 'RefundPayment',
-      },
-    };
-
-    const res = http.post(`${BASE_URL}/post`, payload, params);
-    const success = check(res, {
-      'status is 200': (r) => r.status === 200,
-      'response time < 2000ms': (r) => r.timings.duration < 2000,
-    });
-
-    requestDuration.add(res.timings.duration);
-
-    if (success) {
-      successCounter.add(1);
-    } else {
-      failureCounter.add(1);
-    }
-
-    results.push({
-      service: 'Payment',
-      test_name: 'RefundPayment',
-      method: 'POST',
-      endpoint: '/payments/{id}/refund',
-      status: success ? 'PASS' : 'FAIL',
-      http_status: res.status,
-      duration_ms: res.timings.duration,
-      error: success ? null : `Status ${res.status}`,
-      response_body: res.body.substring(0, 200),
-      timestamp: new Date().toISOString(),
-    });
-
-    sleep(1);
-  });
-
-  group('Payment Service - VerifyPayment', () => {
-    const params = {
-      headers: {
-        'X-Test-Service': 'payment',
-        'X-Test-Name': 'VerifyPayment',
-      },
-    };
-
-    const res = http.get(`${BASE_URL}/get?verification_id=verify_123`, params);
-    const success = check(res, {
-      'status is 200': (r) => r.status === 200,
-      'response time < 1000ms': (r) => r.timings.duration < 1000,
-    });
-
-    requestDuration.add(res.timings.duration);
-
-    if (success) {
-      successCounter.add(1);
-    } else {
-      failureCounter.add(1);
-    }
-
-    results.push({
-      service: 'Payment',
-      test_name: 'VerifyPayment',
-      method: 'GET',
-      endpoint: '/payments/verify',
-      status: success ? 'PASS' : 'FAIL',
-      http_status: res.status,
-      duration_ms: res.timings.duration,
-      error: success ? null : `Status ${res.status}`,
-      response_body: res.body.substring(0, 200),
-      timestamp: new Date().toISOString(),
-    });
-
-    sleep(1);
-  });
-}
-
-// Export summary at end of test
-export function teardown() {
-  // Output results to stdout
-  console.log(JSON.stringify({
-    k6_meta: {
-      execution_id: executionId,
-      scenario: 'payment_service',
-      duration: `${__DURATION}s`,
-      vus: __VUS,
-      timestamp: new Date().toISOString(),
-    },
-    results: results,
-  }, null, 2));
 }

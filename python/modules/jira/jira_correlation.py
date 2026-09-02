@@ -1,169 +1,369 @@
-"""
-Jira Correlation - Match failures to Jira issues using real Jira Cloud API.
-"""
+import logging
+from typing import Any, Dict, Optional
 
-from typing import Any, Dict, Optional, List
-from logger import get_logger
-from config import JIRA_PROJECT_KEY
-from .jira_client import JiraClient
-
-logger = get_logger('jira.correlation')
+logger = logging.getLogger(__name__)
 
 
 class JiraCorrelation:
-    """Correlates test failures with Jira issues using real Jira API."""
+    """
+    Correlates classified API test failures with existing Jira issues.
 
-    def __init__(self, jira_client: Optional[JiraClient] = None):
-        """
-        Initialize Jira correlation.
+    The correlation is based primarily on the failure classification and
+    the service/test information.
+    """
 
-        Args:
-            jira_client: JiraClient instance (or None to create new)
-        """
-        self.jira_client = jira_client or JiraClient()
-        self.logger = logger
-        self.project_key = JIRA_PROJECT_KEY
+    def __init__(self, jira_client):
+        self.jira_client = jira_client
 
-        # Check Jira connectivity
-        if not self.jira_client.health_check():
-            self.logger.warning("Jira API not accessible - correlation will be limited")
+        logger.info("Jira correlation initialized")
 
-    def find_matching_issue(
-        self,
-        service: str,
-        test: str,
-        failure_category: Optional[str] = None
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Find matching Jira issue using real Jira API.
-
-        Args:
-            service: Service name
-            test: Test name
-            failure_category: Optional failure category for more precise matching
-
-        Returns:
-            Matching Jira issue or None
-        """
-        try:
-            # Build search keywords
-            keywords = [
-                service.lower(),
-                test.lower(),
-            ]
-
-            if failure_category:
-                keywords.append(failure_category.lower())
-
-            # Search for issue in Jira
-            issue = self.jira_client.find_issue_by_summary(
-                self.project_key,
-                keywords
-            )
-
-            if issue:
-                return self.jira_client.format_issue(issue)
-
-            return None
-
-        except Exception as e:
-            self.logger.error(f"Error finding matching Jira issue: {e}")
-            return None
+    # ------------------------------------------------------------------
+    # Main correlation method
+    # ------------------------------------------------------------------
 
     def correlate_failure(
         self,
-        service: str,
-        test: str,
-        failure_pattern: str,
-        failure_category: Optional[str] = None,
-        error_message: Optional[str] = None,
-        create_if_missing: bool = False
+        test_result,
+        classification: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
-        Correlate a failure with Jira issues.
+        Search Jira for issues related to the current failure.
 
         Args:
-            service: Service name
-            test: Test name
-            failure_pattern: Failure pattern classification
-            failure_category: Optional AI-detected failure category
-            error_message: Error message from test
-            create_if_missing: If True, create issue if not found (requires permissions)
+            test_result:
+                Current K6TestResult.
+
+            classification:
+                Result produced by FailureClassifier.
 
         Returns:
-            Correlation result dictionary
+            Jira correlation result.
         """
-        try:
-            # Only correlate recurring failures (non-"Healthy" and non-"New Failure")
-            if failure_pattern not in ['Persistent Failure', 'Flaky Failure', 'Resolved Failure']:
-                return {
-                    'jira_found': False,
-                    'jira_id': None,
-                    'jira_status': None,
-                    'jira_summary': None,
-                    'recommendation': f"No Jira correlation for {failure_pattern}",
-                    'reason': 'Not a recurring failure',
-                }
 
-            # Search for matching issue
-            issue = self.find_matching_issue(service, test, failure_category)
+        classification = classification or {}
 
-            if issue:
-                return {
-                    'jira_found': True,
-                    'jira_id': issue.get('jira_id'),
-                    'jira_status': issue.get('status'),
-                    'jira_summary': issue.get('summary'),
-                    'jira_url': issue.get('url'),
-                    'recommendation': f"Existing Jira issue found: {issue.get('jira_id')}",
-                    'reason': 'Matching issue in Jira',
-                }
+        service = test_result.service.lower()
+        test_name = test_result.test_name.lower()
+        status = test_result.status.upper()
 
-            # Optionally create new issue if not found
-            if create_if_missing:
-                summary = f"{service}/{test} - {failure_pattern}"
-                description = f"Failure Pattern: {failure_pattern}\n"
-                description += f"Service: {service}\n"
-                description += f"Test: {test}\n"
+        classification_name = str(
+            classification.get(
+                "classification",
+                classification.get("pattern", ""),
+            )
+        )
 
-                if failure_category:
-                    description += f"Category: {failure_category}\n"
+        logger.debug(
+            "Jira correlation for %s/%s: status=%s, classification=%s",
+            service,
+            test_name,
+            status,
+            classification_name,
+        )
 
-                if error_message:
-                    description += f"\nError: {error_message}\n"
+        # --------------------------------------------------------------
+        # Healthy / passing tests do not need Jira correlation.
+        # --------------------------------------------------------------
 
-                labels = ['test-automation', 'api-test', service.lower()]
+        if status == "PASS":
+            return {
+                "has_jira_issue": False,
+                "issue_key": None,
+                "issue_summary": None,
+                "issue_url": None,
+                "classification": classification_name,
+                "reason": "Test passed",
+            }
 
-                issue_key = self.jira_client.create_issue(
-                    project_key=self.project_key,
-                    summary=summary,
-                    description=description,
-                    issue_type='Bug',
-                    labels=labels
+        # --------------------------------------------------------------
+        # Only attempt Jira correlation for a failure.
+        # --------------------------------------------------------------
+
+        if status != "FAIL":
+            return {
+                "has_jira_issue": False,
+                "issue_key": None,
+                "issue_summary": None,
+                "issue_url": None,
+                "classification": classification_name,
+                "reason": f"Unsupported status: {status}",
+            }
+
+        # --------------------------------------------------------------
+        # Build search terms.
+        # --------------------------------------------------------------
+
+        search_terms = self._build_search_terms(
+            service=service,
+            test_name=test_name,
+            classification=classification_name,
+        )
+
+        for search_term in search_terms:
+            try:
+                logger.debug(
+                    "Searching Jira using: %s",
+                    search_term,
                 )
 
-                if issue_key:
-                    return {
-                        'jira_found': True,
-                        'jira_id': issue_key,
-                        'jira_status': 'To Do',
-                        'jira_summary': summary,
-                        'recommendation': f"Created new Jira issue: {issue_key}",
-                        'reason': 'Issue auto-created',
-                    }
+                issues = self._search_jira(
+                    search_term
+                )
 
-            return {
-                'jira_found': False,
-                'jira_id': None,
-                'jira_status': None,
-                'jira_summary': None,
-                'recommendation': f"No Jira issue found for {service}/{test}. Check project settings.",
-                'reason': 'No matching issue in Jira',
-            }
+                if issues:
+                    issue = issues[0]
 
-        except Exception as e:
-            self.logger.error(f"Error correlating failure: {e}")
-            return {
-                'jira_found': False,
-                'error': str(e),
-            }
+                    result = self._build_issue_result(
+                        issue=issue,
+                        classification=classification_name,
+                    )
+
+                    logger.info(
+                        "Jira issue correlated for %s/%s: %s",
+                        service,
+                        test_name,
+                        result.get("issue_key"),
+                    )
+
+                    return result
+
+            except Exception as exc:
+                logger.warning(
+                    "Jira search failed for '%s': %s",
+                    search_term,
+                    exc,
+                )
+
+        # --------------------------------------------------------------
+        # No matching Jira issue found.
+        # --------------------------------------------------------------
+
+        logger.info(
+            "No Jira issue found for %s/%s",
+            service,
+            test_name,
+        )
+
+        return {
+            "has_jira_issue": False,
+            "issue_key": None,
+            "issue_summary": None,
+            "issue_url": None,
+            "classification": classification_name,
+            "reason": "No matching Jira issue found",
+        }
+
+    # ------------------------------------------------------------------
+    # Search terms
+    # ------------------------------------------------------------------
+
+    def _build_search_terms(
+        self,
+        service: str,
+        test_name: str,
+        classification: str,
+    ):
+        """
+        Build Jira search terms from the service, test and
+        failure classification.
+
+        Multiple search terms are tried from most specific to
+        more general.
+        """
+
+        terms = []
+
+        # Most specific search.
+        if service and test_name and classification:
+            terms.append(
+                f'"{service}" AND '
+                f'"{test_name}" AND '
+                f'"{classification}"'
+            )
+
+        # Service + test.
+        if service and test_name:
+            terms.append(
+                f'"{service}" AND "{test_name}"'
+            )
+
+        # Service + classification.
+        if service and classification:
+            terms.append(
+                f'"{service}" AND "{classification}"'
+            )
+
+        # Test only.
+        if test_name:
+            terms.append(
+                f'"{test_name}"'
+            )
+
+        # Remove duplicates while preserving order.
+        return list(dict.fromkeys(terms))
+
+    # ------------------------------------------------------------------
+    # Jira search
+    # ------------------------------------------------------------------
+
+    def _search_jira(
+        self,
+        search_term: str,
+    ):
+        """
+        Execute a Jira search.
+
+        Supports the common search method names used by the
+        JiraClient implementation.
+        """
+
+        # Preferred method.
+        if hasattr(self.jira_client, "search_issues"):
+            return self.jira_client.search_issues(
+                search_term
+            )
+
+        # Backward compatibility.
+        if hasattr(self.jira_client, "search"):
+            return self.jira_client.search(
+                search_term
+            )
+
+        if hasattr(self.jira_client, "search_jira"):
+            return self.jira_client.search_jira(
+                search_term
+            )
+
+        raise AttributeError(
+            "JiraClient does not provide a supported "
+            "issue-search method"
+        )
+
+    # ------------------------------------------------------------------
+    # Build Jira result
+    # ------------------------------------------------------------------
+
+    def _build_issue_result(
+        self,
+        issue,
+        classification: str,
+    ) -> Dict[str, Any]:
+        """
+        Normalize a Jira issue into the structure used by the
+        reporting layer.
+        """
+
+        # --------------------------------------------------------------
+        # JiraClient may return either:
+        #
+        # 1. A dictionary
+        # 2. A Jira issue object
+        # --------------------------------------------------------------
+
+        if isinstance(issue, dict):
+            issue_key = issue.get("key")
+
+            fields = issue.get(
+                "fields",
+                {},
+            )
+
+            if not isinstance(fields, dict):
+                fields = {}
+
+            summary = fields.get(
+                "summary"
+            ) or issue.get(
+                "summary"
+            )
+
+            issue_url = issue.get(
+                "self"
+            ) or issue.get(
+                "url"
+            )
+
+        else:
+            issue_key = getattr(
+                issue,
+                "key",
+                None,
+            )
+
+            fields = getattr(
+                issue,
+                "fields",
+                None,
+            )
+
+            summary = getattr(
+                fields,
+                "summary",
+                None,
+            )
+
+            issue_url = getattr(
+                issue,
+                "self",
+                None,
+            )
+
+        # --------------------------------------------------------------
+        # Construct Jira URL when the client returned only the key.
+        # --------------------------------------------------------------
+
+        if issue_key and not issue_url:
+            issue_url = self._build_issue_url(
+                issue_key
+            )
+
+        return {
+            "has_jira_issue": bool(issue_key),
+            "issue_key": issue_key,
+            "issue_summary": summary,
+            "issue_url": issue_url,
+            "classification": classification,
+            "reason": (
+                "Matching Jira issue found"
+                if issue_key
+                else "Jira issue returned without key"
+            ),
+        }
+
+    # ------------------------------------------------------------------
+    # Build Jira URL
+    # ------------------------------------------------------------------
+
+    def _build_issue_url(
+        self,
+        issue_key: str,
+    ) -> Optional[str]:
+        """
+        Build a Jira browse URL using the Jira client's configured
+        base URL, when available.
+        """
+
+        base_url = getattr(
+            self.jira_client,
+            "base_url",
+            None,
+        )
+
+        if not base_url:
+            base_url = getattr(
+                self.jira_client,
+                "url",
+                None,
+            )
+
+        if not base_url:
+            return None
+
+        base_url = str(base_url).rstrip("/")
+
+        # Avoid duplicating /browse when a Jira client happens
+        # to expose a URL containing it.
+        if base_url.endswith("/browse"):
+            return f"{base_url}/{issue_key}"
+
+        return f"{base_url}/browse/{issue_key}"

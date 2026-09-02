@@ -7,90 +7,213 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables from .env
-env_file = Path(__file__).parent / '.env'
+
+# ============================================================
+# Load environment variables
+# ============================================================
+
+env_file = Path(__file__).parent / ".env"
+
 if env_file.exists():
     load_dotenv(env_file)
 
+
+# ============================================================
 # Datadog Configuration
-DATADOG_API_KEY = os.getenv('DATADOG_API_KEY', '')
-DATADOG_APP_KEY = os.getenv('DATADOG_APP_KEY', '')
-DATADOG_SITE = os.getenv('DATADOG_SITE', 'datadoghq.com')
-DATADOG_ENVIRONMENT = os.getenv('DATADOG_ENVIRONMENT', 'poc')
-DATADOG_BASE_URL = f'https://api.{DATADOG_SITE}'
+# ============================================================
 
-# Ollama Configuration
-OLLAMA_API_URL = os.getenv('OLLAMA_API_URL', 'http://localhost:11434')
-OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'gemma:7b')
-OLLAMA_TIMEOUT = int(os.getenv('OLLAMA_TIMEOUT', '60'))
+DATADOG_API_KEY = os.getenv("DATADOG_API_KEY", "")
+DATADOG_APP_KEY = os.getenv("DATADOG_APP_KEY", "")
 
-# Jira Configuration (Real Jira Cloud API)
-JIRA_API_URL = os.getenv('JIRA_API_URL', '')  # e.g., https://yourname.atlassian.net
-JIRA_EMAIL = os.getenv('JIRA_EMAIL', '')  # Email associated with Jira account
-JIRA_API_TOKEN = os.getenv('JIRA_API_TOKEN', '')  # API token from Jira Settings
-JIRA_PROJECT_KEY = os.getenv('JIRA_PROJECT_KEY', 'PROJ')  # Jira project key
+DATADOG_SITE = os.getenv(
+    "DATADOG_SITE",
+    "datadoghq.com"
+)
 
+DATADOG_ENVIRONMENT = os.getenv(
+    "DATADOG_ENVIRONMENT",
+    "poc"
+)
+
+DATADOG_BASE_URL = f"https://api.{DATADOG_SITE}"
+
+
+# ============================================================
+# Jira Configuration
+# ============================================================
+
+JIRA_API_URL = os.getenv(
+    "JIRA_API_URL",
+    ""
+)
+
+JIRA_EMAIL = os.getenv(
+    "JIRA_EMAIL",
+    ""
+)
+
+JIRA_API_TOKEN = os.getenv(
+    "JIRA_API_TOKEN",
+    ""
+)
+
+JIRA_PROJECT_KEY = os.getenv(
+    "JIRA_PROJECT_KEY",
+    "PROJ"
+)
+
+
+# ============================================================
 # Analysis Configuration
-HISTORICAL_LOOKBACK_DAYS = int(os.getenv('HISTORICAL_LOOKBACK_DAYS', '10'))
-FAILURE_PERSISTENT_THRESHOLD = float(os.getenv('FAILURE_PERSISTENT_THRESHOLD', '0.70'))
-FAILURE_FLAKY_MIN_ALTERNATIONS = int(os.getenv('FAILURE_FLAKY_MIN_ALTERNATIONS', '2'))
-DRY_RUN = os.getenv('DRY_RUN', 'False').lower() == 'true'
+# ============================================================
 
-# Logging
-LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
-LOG_FILE = os.getenv('LOG_FILE', 'analysis.log')
+# Number of days of historical Datadog data to analyze
+HISTORICAL_LOOKBACK_DAYS = int(
+    os.getenv(
+        "HISTORICAL_LOOKBACK_DAYS",
+        "10"
+    )
+)
 
-# Environment
-ENVIRONMENT = os.getenv('ENVIRONMENT', 'poc')
+# Failure rate at which a test is considered persistent
+# Default = 70%
+FAILURE_PERSISTENT_THRESHOLD = float(
+    os.getenv(
+        "FAILURE_PERSISTENT_THRESHOLD",
+        "0.70"
+    )
+)
 
-# Datadog Tags (applied to all events/metrics)
+# Minimum PASS/FAIL alternations required for flaky classification
+FAILURE_FLAKY_MIN_ALTERNATIONS = int(
+    os.getenv(
+        "FAILURE_FLAKY_MIN_ALTERNATIONS",
+        "2"
+    )
+)
+
+# Dry-run mode
+DRY_RUN = (
+    os.getenv(
+        "DRY_RUN",
+        "False"
+    ).lower() == "true"
+)
+
+
+# ============================================================
+# Logging Configuration
+# ============================================================
+
+LOG_LEVEL = os.getenv(
+    "LOG_LEVEL",
+    "INFO"
+)
+
+LOG_FILE = os.getenv(
+    "LOG_FILE",
+    "analysis.log"
+)
+
+
+# ============================================================
+# Environment Configuration
+# ============================================================
+
+ENVIRONMENT = os.getenv(
+    "ENVIRONMENT",
+    "poc"
+)
+
+
+# ============================================================
+# Datadog Tags
+# ============================================================
+
 DATADOG_TAGS = [
-    f'environment:{ENVIRONMENT}',
-    'test_type:k6',
-    'analyzer:poc',
+    f"environment:{ENVIRONMENT}",
+    "test_type:k6",
+    "analyzer:poc",
 ]
 
-# Failure Pattern Classification Thresholds
+
+# ============================================================
+# Failure Pattern Classification
+# ============================================================
+
 FAILURE_CLASSIFICATIONS = {
-    'healthy': {
-        'description': 'Current test passes, minimal recent failures',
-        'pass_threshold': 0.9,  # >= 90% pass rate
-        'max_failures': 1,
+
+    "healthy": {
+        "description": (
+            "Current test passes with minimal recent failures"
+        ),
+        "pass_threshold": 0.90,
+        "max_failures": 1,
     },
-    'new_failure': {
-        'description': 'Was passing, now failing',
-        'previous_pass_rate': 1.0,  # 100% pass in older history
+
+    "new_failure": {
+        "description": (
+            "Test was previously passing and is now failing"
+        ),
+        "previous_pass_rate": 1.0,
     },
-    'persistent_failure': {
-        'description': 'Repeatedly failing',
-        'failure_threshold': FAILURE_PERSISTENT_THRESHOLD,  # >= 70% failures
+
+    "persistent_failure": {
+        "description": (
+            "Test is repeatedly failing"
+        ),
+        "failure_threshold": FAILURE_PERSISTENT_THRESHOLD,
     },
-    'flaky_failure': {
-        'description': 'Alternating PASS/FAIL pattern',
-        'min_alternations': FAILURE_FLAKY_MIN_ALTERNATIONS,
+
+    "flaky_failure": {
+        "description": (
+            "Test alternates between PASS and FAIL"
+        ),
+        "min_alternations": FAILURE_FLAKY_MIN_ALTERNATIONS,
     },
-    'resolved_failure': {
-        'description': 'Was failing, now passing',
-        'previous_failures': True,  # Had failures before
-        'current_status': 'PASS',
+
+    "resolved_failure": {
+        "description": (
+            "Test was previously failing and is now passing"
+        ),
+        "previous_failures": True,
+        "current_status": "PASS",
     },
 }
 
-# AI Failure Reason Categories
+
+# ============================================================
+# AI Failure Categories
+# ============================================================
+# Kept for future Ollama integration.
+# Ollama itself is intentionally disabled for the current POC.
+
 AI_FAILURE_CATEGORIES = [
-    'Authentication',
-    'Authorization',
-    'Validation',
-    'Timeout',
-    'Network',
-    'Server Error',
-    'Database',
-    'Dependency',
-    'Configuration',
-    'Unknown',
+    "Authentication",
+    "Authorization",
+    "Validation",
+    "Timeout",
+    "Network",
+    "Server Error",
+    "Database",
+    "Dependency",
+    "Configuration",
+    "Unknown",
 ]
 
-# Validate critical configuration
+
+# ============================================================
+# Configuration Validation
+# ============================================================
+
 if not DATADOG_API_KEY and not DRY_RUN:
-    print("WARNING: DATADOG_API_KEY not set. Datadog ingestion will fail.")
-    print("Set DATADOG_API_KEY environment variable or use --dry-run mode.")
+
+    print(
+        "WARNING: DATADOG_API_KEY not set. "
+        "Datadog ingestion will fail."
+    )
+
+    print(
+        "Set DATADOG_API_KEY environment variable "
+        "or use --dry-run mode."
+    )

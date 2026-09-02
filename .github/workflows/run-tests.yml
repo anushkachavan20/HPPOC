@@ -1,109 +1,169 @@
-name: API Test Execution and Analysis
+name: API Test Analysis POC
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 8 * * *'
 
 jobs:
-  test:
+  api-test-analysis:
     runs-on: ubuntu-latest
 
     steps:
-      # -----------------------------------
-      # Checkout
-      # -----------------------------------
-      - name: Checkout repo
+      # ---------------------------------------------------------
+      # 1. Checkout repository
+      # ---------------------------------------------------------
+      - name: Checkout repository
         uses: actions/checkout@v6
 
-      # -----------------------------------
-      # Python
-      # -----------------------------------
-      - name: Set up Python
+      # ---------------------------------------------------------
+      # 2. Setup Python
+      # ---------------------------------------------------------
+      - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.10'
+          python-version: "3.11"
 
+      # ---------------------------------------------------------
+      # 3. Setup k6
+      # ---------------------------------------------------------
+      - name: Setup k6
+        uses: grafana/setup-k6-action@v1
+
+      # ---------------------------------------------------------
+      # 4. Install Python dependencies
+      # ---------------------------------------------------------
       - name: Install Python dependencies
+        working-directory: python
         run: |
-          cd python
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # -----------------------------------
-      # k6
-      # -----------------------------------
-      - name: Install k6
-        uses: grafana/setup-k6-action@v1
-
-      - name: Check k6 version
-        run: k6 version
-
-      # -----------------------------------
-      # Run k6 tests
-      # -----------------------------------
-      - name: Run k6 tests
+      # ---------------------------------------------------------
+      # 5. Run Customer API tests
+      # ---------------------------------------------------------
+      - name: Run Customer API tests
+        working-directory: k6
+        continue-on-error: true
         run: |
-          cd k6
+          echo "Running Customer Service tests..."
 
-          k6 run tests/customer_service.js \
-            --out json=customer_results.json \
-            > customer_output.txt 2>&1 || true
+          k6 run \
+            tests/customer_service.js \
+            --out json=customer_results.json
 
-          k6 run tests/order_service.js \
-            --out json=order_results.json \
-            > order_output.txt 2>&1 || true
+      # ---------------------------------------------------------
+      # 6. Run Order API tests
+      # ---------------------------------------------------------
+      - name: Run Order API tests
+        working-directory: k6
+        continue-on-error: true
+        run: |
+          echo "Running Order Service tests..."
 
-          k6 run tests/payment_service.js \
-            --out json=payment_results.json \
-            > payment_output.txt 2>&1 || true
+          k6 run \
+            tests/order_service.js \
+            --out json=order_results.json
 
-          echo "================================="
-          echo "Generated k6 result files:"
-          echo "================================="
+      # ---------------------------------------------------------
+      # 7. Run Payment API tests
+      # ---------------------------------------------------------
+      - name: Run Payment API tests
+        working-directory: k6
+        continue-on-error: true
+        run: |
+          echo "Running Payment Service tests..."
 
-          ls -lah *.json *.txt || true
+          k6 run \
+            tests/payment_service.js \
+            --out json=payment_results.json
 
-      # -----------------------------------
-      # Run analysis
-      # -----------------------------------
-      - name: Run analysis
+      # ---------------------------------------------------------
+      # 8. Combine native k6 JSON output
+      # ---------------------------------------------------------
+      - name: Combine k6 results
+        working-directory: k6
+        run: |
+          echo "Preparing combined k6 result file..."
+
+          rm -f results.json
+
+          for file in \
+            customer_results.json \
+            order_results.json \
+            payment_results.json
+          do
+            if [ -s "$file" ]; then
+              cat "$file" >> results.json
+              echo "" >> results.json
+            else
+              echo "WARNING: $file was not created or is empty"
+            fi
+          done
+
+          echo ""
+          echo "Generated result files:"
+          ls -lh *.json || true
+
+          echo ""
+          echo "Combined results:"
+          if [ -s results.json ]; then
+            wc -l results.json
+          else
+            echo "ERROR: results.json is empty"
+            exit 1
+          fi
+
+      # ---------------------------------------------------------
+      # 9. Run Python analysis
+      # ---------------------------------------------------------
+      - name: Run API analysis
+        working-directory: python
         env:
           DATADOG_API_KEY: ${{ secrets.DATADOG_API_KEY }}
           DATADOG_APP_KEY: ${{ secrets.DATADOG_APP_KEY }}
           DATADOG_SITE: ${{ secrets.DATADOG_SITE }}
-          JIRA_API_URL: ${{ secrets.JIRA_API_URL }}
+
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
-          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+
           DRY_RUN: ${{ secrets.DRY_RUN }}
-          LOG_LEVEL: INFO
 
         run: |
-          cd python
+          echo "Starting API Test Analysis..."
 
-          if [ -f ../k6/results.json ] && [ -s ../k6/results.json ]; then
-            echo "Using k6 results.json"
-            python main.py --k6-result ../k6/results.json
-          else
-            echo "No final results.json found"
-            echo "Using sample data for analysis"
-            python main.py \
-              --k6-result ../k6/sample_results.json \
-              --dry-run
+          if [ ! -s ../k6/results.json ]; then
+            echo "ERROR: k6/results.json does not exist or is empty"
+            exit 1
           fi
 
-        continue-on-error: true
+          python main.py \
+            --k6-result ../k6/results.json \
+            --execution-id "gh_run_${{ github.run_id }}"
 
-      # -----------------------------------
-      # Upload artifacts
-      # -----------------------------------
-      - name: Upload artifacts
+      # ---------------------------------------------------------
+      # 10. Upload k6 results
+      # ---------------------------------------------------------
+      - name: Upload k6 results
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v4
         with:
-          name: k6-and-analysis
+          name: k6-results-${{ github.run_id }}
           path: |
-            k6/*.json
-            k6/*.txt
-            python/logs/
+            k6/customer_results.json
+            k6/order_results.json
+            k6/payment_results.json
+            k6/results.json
+          if-no-files-found: warn
+
+      # ---------------------------------------------------------
+      # 11. Upload analysis logs if available
+      # ---------------------------------------------------------
+      - name: Upload analysis logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: analysis-artifacts-${{ github.run_id }}
+          path: |
+            python/**/*.log
+            python/*.log
+          if-no-files-found: ignore

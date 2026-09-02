@@ -1,206 +1,381 @@
-"""
-Result Aggregator - Combine all analysis components into final results.
-"""
-
+import logging
 from typing import Any, Dict, List, Optional
-from logger import get_logger
 
-logger = get_logger('reporting.aggregator')
+logger = logging.getLogger(__name__)
 
 
 class ResultAggregator:
-    """Aggregates all analysis results into comprehensive output."""
+    """
+    Combines current k6 results with:
+
+    - Historical Datadog analysis
+    - Failure classification
+    - Jira correlation
+    - Optional AI analysis
+
+    The output of this class is the common structure consumed by
+    the summary generator and Datadog publisher.
+    """
 
     def __init__(self):
-        self.logger = logger
+        logger.info("Result aggregator initialized")
 
-    def aggregate_analysis(
+    # ------------------------------------------------------------------
+    # Main aggregation method
+    # ------------------------------------------------------------------
+
+    def aggregate(
         self,
-        current_results: List[Dict[str, Any]],
-        historical_analysis: List[Dict[str, Any]],
-        failure_classifications: List[Dict[str, Any]],
-        jira_correlations: List[Dict[str, Any]],
-        ai_analyses: Optional[List[Dict[str, Any]]] = None
+        k6_execution,
+        historical_data: Optional[Dict[str, Any]] = None,
+        classifications: Optional[Dict[str, Any]] = None,
+        jira_results: Optional[Dict[str, Any]] = None,
+        ai_analyses: Optional[Any] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Aggregate all analysis components into final results.
+        Aggregate all analysis information for every k6 test result.
 
         Args:
-            current_results: Current test execution results
-            historical_analysis: Historical comparison analysis
-            failure_classifications: Failure pattern classifications
-            jira_correlations: Jira correlation results
-            ai_analyses: AI-powered failure analyses (for failed tests only)
+            k6_execution:
+                Parsed K6ExecutionResult.
+
+            historical_data:
+                Historical Datadog analysis keyed by:
+                    service:test
+
+            classifications:
+                Failure classifications keyed by:
+                    service:test
+
+            jira_results:
+                Jira correlation results keyed by:
+                    service:test
+
+            ai_analyses:
+                Optional AI analysis results.
 
         Returns:
-            List of comprehensive analysis results for each test
+            List of aggregated test-analysis dictionaries.
         """
-        try:
-            aggregated = []
 
-            # Create lookup dictionaries for easier correlation
-            historical_map = {
-                f"{h.get('service')}/{h.get('test')}": h
-                for h in historical_analysis
-            }
-            classification_map = {
-                f"{c.get('service')}/{c.get('test')}": c
-                for c in failure_classifications
-            }
-            jira_map = {
-                f"{j.get('service')}/{j.get('test')}": j
-                for j in jira_correlations
-            }
-            ai_map = {}
-            if ai_analyses:
-                ai_map = {
-                    f"{a.get('service')}/{a.get('test')}": a
-                    for a in ai_analyses
-                }
+        historical_data = historical_data or {}
+        classifications = classifications or {}
+        jira_results = jira_results or {}
 
-            # Combine results
-            for result in current_results:
-                service = result.get('service')
-                test = result.get('test')
-                status = result.get('status')
-                key = f"{service}/{test}"
+        if ai_analyses is None:
+            ai_analyses = []
 
-                # Get related analysis
-                historical = historical_map.get(key, {})
-                classification = classification_map.get(key, {})
-                jira = jira_map.get(key, {})
-                ai = ai_map.get(key, {}) if status == 'FAIL' else None
+        aggregated_results = []
 
-                # Build comprehensive result
-                aggregated_result = {
-                    'service': service,
-                    'test': test,
-                    'execution_id': result.get('execution_id'),
-                    'timestamp': result.get('timestamp'),
-                    'current_result': {
-                        'status': status,
-                        'http_status': result.get('http_status'),
-                        'duration_ms': result.get('duration_ms'),
-                        'error_message': result.get('error_message'),
-                    },
-                    'historical_analysis': historical.get('historical_analysis', {}),
-                    'failure_pattern': {
-                        'pattern': classification.get('failure_pattern'),
-                        'percentage': classification.get('failure_percentage'),
-                        'confidence': classification.get('confidence'),
-                        'reasoning': classification.get('reasoning'),
-                    },
-                    'jira_correlation': jira,
-                }
+        for test_result in k6_execution.results:
+            service = test_result.service.lower()
+            test_name = test_result.test_name.lower()
 
-                # Add AI analysis only for failed tests
-                if status == 'FAIL' and ai:
-                    aggregated_result['ai_analysis'] = ai
+            key = f"{service}:{test_name}"
 
-                aggregated.append(aggregated_result)
+            historical = historical_data.get(key)
+            classification = classifications.get(key)
+            jira = jira_results.get(key)
 
-            self.logger.info(f"Aggregated analysis for {len(aggregated)} tests")
-            return aggregated
+            ai_analysis = self._find_ai_analysis(
+                ai_analyses=ai_analyses,
+                service=service,
+                test_name=test_name,
+            )
 
-        except Exception as e:
-            self.logger.error(f"Failed to aggregate analysis: {e}")
-            return []
+            result = self._build_result(
+                test_result=test_result,
+                historical=historical,
+                classification=classification,
+                jira=jira,
+                ai_analysis=ai_analysis,
+                execution_id=k6_execution.k6_meta.execution_id,
+            )
 
-    def get_failed_tests(
+            aggregated_results.append(result)
+
+        logger.info(
+            "Aggregated %d test results",
+            len(aggregated_results),
+        )
+
+        return aggregated_results
+
+    # ------------------------------------------------------------------
+    # Build individual result
+    # ------------------------------------------------------------------
+
+    def _build_result(
         self,
-        aggregated_results: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        test_result,
+        historical: Optional[Dict[str, Any]],
+        classification: Optional[Dict[str, Any]],
+        jira: Optional[Dict[str, Any]],
+        ai_analysis: Optional[Dict[str, Any]],
+        execution_id: str,
+    ) -> Dict[str, Any]:
         """
-        Extract only failed test results.
-
-        Args:
-            aggregated_results: Complete aggregated results
-
-        Returns:
-            List of failed test results
+        Build the final normalized representation of one test.
         """
-        return [
-            r for r in aggregated_results
-            if r.get('current_result', {}).get('status') == 'FAIL'
-        ]
 
-    def get_by_pattern(
+        service = test_result.service.lower()
+        test_name = test_result.test_name.lower()
+        status = test_result.status.upper()
+
+        historical = historical or {}
+        classification = classification or {}
+        jira = jira or {}
+
+        # --------------------------------------------------------------
+        # Historical information
+        # --------------------------------------------------------------
+
+        historical_executions = historical.get(
+            "total_executions",
+            0,
+        )
+
+        historical_passed = historical.get(
+            "passed",
+            0,
+        )
+
+        historical_failed = historical.get(
+            "failed",
+            0,
+        )
+
+        historical_pass_rate = historical.get(
+            "pass_rate",
+            0.0,
+        )
+
+        historical_failure_rate = historical.get(
+            "failure_rate",
+            0.0,
+        )
+
+        historical_trend = historical.get(
+            "trend",
+            "NO_HISTORY",
+        )
+
+        historical_statuses = historical.get(
+            "statuses",
+            [],
+        )
+
+        # --------------------------------------------------------------
+        # Classification
+        # --------------------------------------------------------------
+
+        classification_name = classification.get(
+            "classification",
+            classification.get(
+                "pattern",
+                "Unknown",
+            ),
+        )
+
+        # --------------------------------------------------------------
+        # Jira
+        # --------------------------------------------------------------
+
+        has_jira_issue = bool(
+            jira.get(
+                "has_jira_issue",
+                False,
+            )
+        )
+
+        issue_key = jira.get(
+            "issue_key"
+        )
+
+        issue_summary = jira.get(
+            "issue_summary"
+        )
+
+        issue_url = jira.get(
+            "issue_url"
+        )
+
+        # --------------------------------------------------------------
+        # AI
+        # --------------------------------------------------------------
+
+        ai_present = bool(ai_analysis)
+
+        # --------------------------------------------------------------
+        # Final structure
+        # --------------------------------------------------------------
+
+        result = {
+            # ----------------------------------------------------------
+            # Current test information
+            # ----------------------------------------------------------
+
+            "execution_id": execution_id,
+            "service": service,
+            "test": test_name,
+            "method": test_result.method.upper(),
+            "endpoint": test_result.endpoint,
+            "status": status,
+            "http_status": test_result.http_status,
+            "duration_ms": test_result.duration_ms,
+            "error_message": test_result.error or "",
+            "response_body": test_result.response_body or "",
+            "timestamp": test_result.timestamp,
+
+            # ----------------------------------------------------------
+            # Historical information
+            # ----------------------------------------------------------
+
+            "historical": {
+                "total_executions": historical_executions,
+                "passed": historical_passed,
+                "failed": historical_failed,
+                "pass_rate": historical_pass_rate,
+                "failure_rate": historical_failure_rate,
+                "trend": historical_trend,
+                "statuses": historical_statuses,
+                "has_history": bool(
+                    historical.get(
+                        "has_history",
+                        False,
+                    )
+                ),
+            },
+
+            # ----------------------------------------------------------
+            # Classification
+            # ----------------------------------------------------------
+
+            "classification": {
+                "pattern": classification_name,
+                "current_status": classification.get(
+                    "current_status",
+                    status,
+                ),
+                "historical_executions": classification.get(
+                    "historical_executions",
+                    historical_executions,
+                ),
+                "historical_passed": classification.get(
+                    "historical_passed",
+                    historical_passed,
+                ),
+                "historical_failed": classification.get(
+                    "historical_failed",
+                    historical_failed,
+                ),
+                "historical_failure_rate": classification.get(
+                    "historical_failure_rate",
+                    historical_failure_rate,
+                ),
+                "historical_trend": classification.get(
+                    "historical_trend",
+                    historical_trend,
+                ),
+            },
+
+            # ----------------------------------------------------------
+            # Jira
+            # ----------------------------------------------------------
+
+            "jira": {
+                "has_issue": has_jira_issue,
+                "issue_key": issue_key,
+                "issue_summary": issue_summary,
+                "issue_url": issue_url,
+                "reason": jira.get(
+                    "reason"
+                ),
+            },
+
+            # ----------------------------------------------------------
+            # AI
+            # ----------------------------------------------------------
+
+            "ai_analysis": (
+                ai_analysis
+                if ai_present
+                else None
+            ),
+        }
+
+        return result
+
+    # ------------------------------------------------------------------
+    # AI lookup
+    # ------------------------------------------------------------------
+
+    def _find_ai_analysis(
         self,
-        aggregated_results: List[Dict[str, Any]],
-        pattern: str
-    ) -> List[Dict[str, Any]]:
+        ai_analyses: Any,
+        service: str,
+        test_name: str,
+    ) -> Optional[Dict[str, Any]]:
         """
-        Filter results by failure pattern.
+        Find an AI analysis for a specific service/test.
 
-        Args:
-            aggregated_results: Complete aggregated results
-            pattern: Failure pattern (e.g., 'Persistent Failure')
-
-        Returns:
-            List of results matching the pattern
+        AI is disabled in the current POC, so this normally returns
+        None. The method remains here so AI can be reintroduced later
+        without changing the aggregation interface.
         """
-        return [
-            r for r in aggregated_results
-            if r.get('failure_pattern', {}).get('pattern') == pattern
-        ]
 
-    def get_by_service(
-        self,
-        aggregated_results: List[Dict[str, Any]],
-        service: str
-    ) -> List[Dict[str, Any]]:
-        """
-        Filter results by service.
+        if not ai_analyses:
+            return None
 
-        Args:
-            aggregated_results: Complete aggregated results
-            service: Service name
+        # --------------------------------------------------------------
+        # Dictionary format
+        # --------------------------------------------------------------
 
-        Returns:
-            List of results for the service
-        """
-        return [
-            r for r in aggregated_results
-            if r.get('service').lower() == service.lower()
-        ]
+        if isinstance(ai_analyses, dict):
+            key = f"{service}:{test_name}"
 
-    def format_result_summary(
-        self,
-        result: Dict[str, Any]
-    ) -> str:
-        """
-        Format a single result as human-readable summary.
+            if key in ai_analyses:
+                return ai_analyses[key]
 
-        Args:
-            result: Aggregated result for single test
+            # Try service/test nested format.
+            service_data = ai_analyses.get(service)
 
-        Returns:
-            Formatted summary string
-        """
-        service = result.get('service')
-        test = result.get('test')
-        status = result.get('current_result', {}).get('status')
-        pattern = result.get('failure_pattern', {}).get('pattern')
-        jira = result.get('jira_correlation', {})
-        ai = result.get('ai_analysis', {})
+            if isinstance(service_data, dict):
+                analysis = service_data.get(test_name)
 
-        summary = f"{service}/{test}: {status}"
-        summary += f"\n  Pattern: {pattern}"
+                if isinstance(analysis, dict):
+                    return analysis
 
-        if status == 'FAIL':
-            http_status = result.get('current_result', {}).get('http_status')
-            error = result.get('current_result', {}).get('error_message')
-            summary += f"\n  HTTP Status: {http_status}"
-            if error:
-                summary += f"\n  Error: {error[:100]}"
+        # --------------------------------------------------------------
+        # List format
+        # --------------------------------------------------------------
 
-            if jira.get('jira_found'):
-                summary += f"\n  Jira: {jira.get('jira_id')} ({jira.get('jira_status')})"
-            else:
-                summary += f"\n  Jira: {jira.get('recommendation', 'No issue found')}"
+        if isinstance(ai_analyses, list):
+            for analysis in ai_analyses:
+                if not isinstance(analysis, dict):
+                    continue
 
-            if ai:
-                summary += f"\n  AI Analysis: {ai.get('failure_category')}"
-                summary += f"\n  Reason: {ai.get('failure_reason')[:100]}"
+                analysis_service = str(
+                    analysis.get(
+                        "service",
+                        "",
+                    )
+                ).lower()
 
-        return summary
+                analysis_test = str(
+                    analysis.get(
+                        "test",
+                        analysis.get(
+                            "test_name",
+                            "",
+                        ),
+                    )
+                ).lower()
+
+                if (
+                    analysis_service == service
+                    and analysis_test == test_name
+                ):
+                    return analysis
+
+        return None

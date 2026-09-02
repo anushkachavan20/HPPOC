@@ -1,236 +1,520 @@
-#!/usr/bin/env python3
-"""
-Main entry point for the API Test Analysis POC.
-
-Usage:
-    python main.py --k6-result <path-to-k6-results.json>
-    python main.py --k6-result results.json --dry-run
-"""
-
 import argparse
-import json
+import logging
 import sys
-from pathlib import Path
 from typing import Optional
 
-# Add modules to path
-sys.path.insert(0, str(Path(__file__).parent))
+from config import DRY_RUN, LOG_LEVEL
+from logger import setup_logger
 
-from logger import get_logger
-from config import DRY_RUN
 from modules.ingestion.k6_result_parser import K6ResultParser
 from modules.ingestion.datadog_ingestion import DatadogIngestion
+
 from modules.datadog.datadog_client import DatadogClient
+
 from modules.analysis.historical_analyzer import HistoricalAnalyzer
 from modules.analysis.failure_classifier import FailureClassifier
-from modules.jira.jira_correlation import JiraCorrelation
+
 from modules.jira.jira_client import JiraClient
-from modules.ai.ollama_client import OllamaClient
-from modules.ai.failure_analyzer import FailureAnalyzer
+from modules.jira.jira_correlation import JiraCorrelation
+
 from modules.reporting.result_aggregator import ResultAggregator
 from modules.reporting.summary_generator import SummaryGenerator
 from modules.reporting.datadog_publisher import DatadogPublisher
 
-logger = get_logger('main')
+
+logger = logging.getLogger(__name__)
 
 
-class AnalysisEngine:
-    """Main analysis engine orchestrator."""
+class APIAnalysisEngine:
+    """
+    Main orchestration engine for the API test analysis POC.
+
+    Pipeline:
+
+        k6 results
+            ↓
+        Parse results
+            ↓
+        Datadog ingestion
+            ↓
+        Historical analysis
+            ↓
+        Failure classification
+            ↓
+        Jira correlation
+            ↓
+        Reporting
+            ↓
+        Datadog publishing
+
+    Ollama / LLM analysis is intentionally disabled for the
+    current POC phase.
+    """
 
     def __init__(self, dry_run: bool = False):
-        """
-        Initialize analysis engine.
-
-        Args:
-            dry_run: If True, don't send results to Datadog
-        """
         self.dry_run = dry_run
 
-        # Initialize clients
-        self.datadog_client = DatadogClient()
-        self.ollama_client = OllamaClient()
-        self.jira_client = JiraClient()  # Real Jira Cloud API
+        logger.info("Initializing API Analysis Engine")
 
-        # Initialize components
+        # --------------------------------------------------------------
+        # k6
+        # --------------------------------------------------------------
+
         self.k6_parser = K6ResultParser()
-        self.datadog_ingestion = DatadogIngestion(self.datadog_client)
-        self.historical_analyzer = HistoricalAnalyzer(self.datadog_client)
+
+        # --------------------------------------------------------------
+        # Datadog
+        # --------------------------------------------------------------
+
+        self.datadog_client = DatadogClient()
+
+        self.datadog_ingestion = DatadogIngestion(
+            self.datadog_client,
+            dry_run=self.dry_run,
+        )
+
+        self.historical_analyzer = HistoricalAnalyzer(
+            self.datadog_client
+        )
+
+        # --------------------------------------------------------------
+        # Failure classification
+        # --------------------------------------------------------------
+
         self.failure_classifier = FailureClassifier()
-        self.jira_correlation = JiraCorrelation(self.jira_client)  # Pass JiraClient
-        self.failure_analyzer = FailureAnalyzer(self.ollama_client)
+
+        # --------------------------------------------------------------
+        # Jira
+        # --------------------------------------------------------------
+
+        self.jira_client = JiraClient()
+
+        self.jira_correlation = JiraCorrelation(
+            self.jira_client
+        )
+
+        # --------------------------------------------------------------
+        # Reporting
+        # --------------------------------------------------------------
+
         self.result_aggregator = ResultAggregator()
+
         self.summary_generator = SummaryGenerator()
-        self.datadog_publisher = DatadogPublisher(self.datadog_client)
+
+        self.datadog_publisher = DatadogPublisher(
+            self.datadog_client,
+            dry_run=self.dry_run,
+        )
 
         logger.info("Analysis engine initialized")
 
-    def run_analysis(self, k6_result_file: str) -> bool:
+    # ------------------------------------------------------------------
+    # Main Analysis Pipeline
+    # ------------------------------------------------------------------
+
+    def run_analysis(
+        self,
+        k6_result_file: str,
+        execution_id: Optional[str] = None,
+    ) -> bool:
         """
-        Run complete analysis pipeline.
+        Execute the complete API test analysis pipeline.
 
         Args:
-            k6_result_file: Path to k6 results JSON file
+            k6_result_file:
+                Path to the k6 JSON/JSONL result file.
+
+            execution_id:
+                Optional execution ID. In GitHub Actions this is normally
+                passed as gh_run_<github_run_id>.
 
         Returns:
-            True if successful
+            True if the analysis completed successfully.
+            False if a fatal error occurred.
         """
+
+        logger.info("=" * 80)
+        logger.info("Starting API Test Analysis")
+        logger.info("=" * 80)
+
         try:
-            logger.info("=" * 60)
-            logger.info("Starting API Test Analysis Pipeline")
-            logger.info("=" * 60)
+            # ==========================================================
+            # STEP 1 - Parse k6 Results
+            # ==========================================================
 
-            # Step 1: Parse k6 results
-            logger.info("\n[Step 1/8] Parsing k6 test results...")
-            k6_result = self.k6_parser.parse_k6_json(k6_result_file)
-            if not k6_result:
-                logger.error("Failed to parse k6 results")
+            logger.info(
+                "\n[Step 1/8] Parsing k6 test results..."
+            )
+
+            k6_execution = self.k6_parser.parse_k6_json(
+                k6_result_file,
+                execution_id=execution_id,
+            )
+
+            logger.info(
+                "Parsed %d test results (ID: %s)",
+                len(k6_execution.results),
+                k6_execution.k6_meta.execution_id,
+            )
+
+            if not k6_execution.results:
+                logger.error(
+                    "No test results were found in the k6 result file"
+                )
                 return False
 
-            execution_id = k6_result.k6_meta.execution_id
-            logger.info(f"Parsed {len(k6_result.results)} test results (ID: {execution_id})")
+            # ==========================================================
+            # STEP 2 - Ingest Results into Datadog
+            # ==========================================================
 
-            # Normalize results
-            normalized_results = self.k6_parser.normalize_results(k6_result)
-
-            # Step 2: Ingest into Datadog
-            logger.info("\n[Step 2/8] Ingesting results into Datadog...")
-            success = self.datadog_ingestion.ingest_test_results(
-                normalized_results, execution_id, dry_run=self.dry_run
+            logger.info(
+                "\n[Step 2/8] Ingesting results into Datadog..."
             )
-            if not success:
-                logger.error("Failed to ingest results")
-                return False
 
-            # Step 3: Retrieve historical data
-            logger.info("\n[Step 3/8] Querying historical data from Datadog...")
-            historical_analyses = []
-            for test_result in normalized_results:
-                service = test_result['service']
-                test = test_result['test']
-                historical = self.historical_analyzer.analyze_historical_comparison(
-                    service, test, test_result
+            ingestion_result = (
+                self.datadog_ingestion.ingest_execution(
+                    k6_execution
                 )
-                if historical:
-                    historical_analyses.append(historical)
-
-            logger.info(f"Retrieved historical data for {len(historical_analyses)} tests")
-
-            # Step 4: Classify failures
-            logger.info("\n[Step 4/8] Classifying failure patterns...")
-            historical_data = {
-                f"{h['service']}/{h['test']}": h
-                for h in historical_analyses
-            }
-            classifications = self.failure_classifier.classify_batch(
-                normalized_results, historical_data
             )
-            logger.info(f"Classified {len(classifications)} failures")
 
-            # Step 5: Correlate with Jira
-            logger.info("\n[Step 5/8] Correlating with Jira issues...")
-            jira_correlations = []
-            for classification in classifications:
-                jira = self.jira_correlation.correlate_failure(
-                    service=classification['service'],
-                    test=classification['test'],
-                    failure_pattern=classification['failure_pattern'],
-                )
-                jira_correlations.append(jira)
-            logger.info(f"Correlated {len(jira_correlations)} failures with Jira")
+            logger.info(
+                "Datadog ingestion completed: %s",
+                ingestion_result,
+            )
 
-            # Step 6: AI failure analysis (only for failed tests)
-            logger.info("\n[Step 6/8] Analyzing failure reasons with AI...")
-            ai_analyses = []
-            failed_results = [r for r in normalized_results if r['status'] == 'FAIL']
+            # ==========================================================
+            # STEP 3 - Query Historical Data
+            # ==========================================================
 
-            if failed_results:
-                # Check Ollama health
-                if not self.ollama_client.health_check():
-                    logger.warning("Ollama is not accessible - skipping AI analysis")
-                else:
-                    for failure in failed_results:
-                        ai_analysis = self.failure_analyzer.analyze_failure(
-                            service=failure['service'],
-                            test=failure['test'],
-                            http_status=failure['http_status'],
-                            error_message=failure['error_message'],
-                            response_body=failure.get('response_body'),
+            logger.info(
+                "\n[Step 3/8] Querying historical data from Datadog..."
+            )
+
+            historical_data = {}
+
+            for test_result in k6_execution.results:
+                service = test_result.service.lower()
+                test_name = test_result.test_name.lower()
+
+                try:
+                    history = (
+                        self.historical_analyzer.analyze_test_history(
+                            service=service,
+                            test=test_name,
                         )
-                        ai_analyses.append({
-                            'service': failure['service'],
-                            'test': failure['test'],
-                            **ai_analysis
-                        })
+                    )
 
-            logger.info(f"Performed AI analysis on {len(ai_analyses)} failures")
+                    historical_data[
+                        f"{service}:{test_name}"
+                    ] = history
 
-            # Step 7: Aggregate results
-            logger.info("\n[Step 7/8] Aggregating analysis results...")
-            aggregated = self.result_aggregator.aggregate_analysis(
-                normalized_results,
-                historical_analyses,
-                classifications,
-                jira_correlations,
-                ai_analyses
+                except Exception as exc:
+                    logger.warning(
+                        "Historical analysis failed for %s/%s: %s",
+                        service,
+                        test_name,
+                        exc,
+                    )
+
+                    historical_data[
+                        f"{service}:{test_name}"
+                    ] = None
+
+            logger.info(
+                "Retrieved historical data for %d tests",
+                len(historical_data),
             )
-            logger.info(f"Aggregated results for {len(aggregated)} tests")
 
-            # Step 8: Generate summary and publish
-            logger.info("\n[Step 8/8] Publishing results and generating summary...")
-            summary = self.summary_generator.generate_detailed_summary(aggregated)
-            logger.info("\n" + summary)
+            # ==========================================================
+            # STEP 4 - Classify Failure Patterns
+            # ==========================================================
 
-            # Publish to Datadog
-            success = self.datadog_publisher.publish_analysis(
-                aggregated, dry_run=self.dry_run
+            logger.info(
+                "\n[Step 4/8] Classifying failure patterns..."
             )
-            if not success:
-                logger.warning("Failed to publish analysis results")
 
-            logger.info("\n" + "=" * 60)
+            classifications = {}
+
+            for test_result in k6_execution.results:
+                service = test_result.service.lower()
+                test_name = test_result.test_name.lower()
+
+                key = f"{service}:{test_name}"
+
+                history = historical_data.get(key)
+
+                try:
+                    classification = (
+                        self.failure_classifier.classify(
+                            current_result=test_result,
+                            historical_data=history,
+                        )
+                    )
+
+                    classifications[key] = classification
+
+                except Exception as exc:
+                    logger.warning(
+                        "Failure classification failed for %s/%s: %s",
+                        service,
+                        test_name,
+                        exc,
+                    )
+
+                    classifications[key] = None
+
+            logger.info(
+                "Classified %d test results",
+                len(classifications),
+            )
+
+            # ==========================================================
+            # STEP 5 - Correlate with Jira
+            # ==========================================================
+
+            logger.info(
+                "\n[Step 5/8] Correlating failure patterns with Jira..."
+            )
+
+            jira_results = {}
+
+            for test_result in k6_execution.results:
+                service = test_result.service.lower()
+                test_name = test_result.test_name.lower()
+
+                key = f"{service}:{test_name}"
+
+                classification = classifications.get(key)
+
+                try:
+                    jira_result = (
+                        self.jira_correlation.correlate_failure(
+                            test_result=test_result,
+                            classification=classification,
+                        )
+                    )
+
+                    jira_results[key] = jira_result
+
+                except Exception as exc:
+                    logger.warning(
+                        "Jira correlation failed for %s/%s: %s",
+                        service,
+                        test_name,
+                        exc,
+                    )
+
+                    jira_results[key] = None
+
+            logger.info(
+                "Correlated %d failures with Jira",
+                len(jira_results),
+            )
+
+            # ==========================================================
+            # STEP 6 - AI Analysis
+            # ==========================================================
+
+            logger.info(
+                "\n[Step 6/8] AI failure analysis skipped"
+            )
+
+            logger.info(
+                "Ollama/LLM integration is disabled for the "
+                "current POC phase"
+            )
+
+            ai_analyses = []
+
+            # ==========================================================
+            # STEP 7 - Aggregate Results
+            # ==========================================================
+
+            logger.info(
+                "\n[Step 7/8] Aggregating analysis results..."
+            )
+
+            aggregated_results = (
+                self.result_aggregator.aggregate(
+                    k6_execution=k6_execution,
+                    historical_data=historical_data,
+                    classifications=classifications,
+                    jira_results=jira_results,
+                    ai_analyses=ai_analyses,
+                )
+            )
+
+            logger.info(
+                "Aggregated %d analysis results",
+                len(aggregated_results),
+            )
+
+            # ==========================================================
+            # Generate Human-readable Summary
+            # ==========================================================
+
+            logger.info(
+                "\nGenerating analysis summary..."
+            )
+
+            summary = (
+                self.summary_generator.generate(
+                    aggregated_results
+                )
+            )
+
+            print("\n")
+            print("=" * 80)
+            print("API TEST ANALYSIS SUMMARY")
+            print("=" * 80)
+            print(summary)
+            print("=" * 80)
+
+            # ==========================================================
+            # STEP 8 - Publish Analysis to Datadog
+            # ==========================================================
+
+            logger.info(
+                "\n[Step 8/8] Publishing analysis results to Datadog..."
+            )
+
+            publish_result = (
+                self.datadog_publisher.publish(
+                    aggregated_results
+                )
+            )
+
+            logger.info(
+                "Datadog publishing completed: %s",
+                publish_result,
+            )
+
+            logger.info("=" * 80)
             logger.info("Analysis Complete!")
-            logger.info("=" * 60)
+            logger.info("=" * 80)
 
             return True
 
-        except Exception as e:
-            logger.error(f"Unexpected error in analysis pipeline: {e}", exc_info=True)
+        except FileNotFoundError as exc:
+            logger.error(
+                "k6 result file not found: %s",
+                exc,
+            )
+            return False
+
+        except ValueError as exc:
+            logger.error(
+                "Invalid k6 result data: %s",
+                exc,
+            )
+            return False
+
+        except Exception as exc:
+            logger.exception(
+                "Fatal error during API analysis: %s",
+                exc,
+            )
             return False
 
 
-def main():
-    """Main entry point."""
+# ----------------------------------------------------------------------
+# Command Line Interface
+# ----------------------------------------------------------------------
+
+def parse_arguments():
+    """
+    Parse command-line arguments.
+    """
+
     parser = argparse.ArgumentParser(
-        description='API Test Result Analysis POC'
+        description=(
+            "AI-assisted API test analysis pipeline "
+            "using k6, Datadog and Jira"
+        )
     )
+
     parser.add_argument(
-        '--k6-result',
+        "--k6-result",
         required=True,
-        help='Path to k6 test results JSON file'
+        help="Path to the k6 result JSON/JSONL file",
     )
+
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Run without sending results to Datadog'
+        "--execution-id",
+        required=False,
+        default=None,
+        help=(
+            "Execution ID used to identify this test run. "
+            "Example: gh_run_12345"
+        ),
     )
+
     parser.add_argument(
-        '--execution-id',
-        help='Override execution ID (default: from k6 meta)'
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Run without sending data to Datadog. "
+            "This overrides the DRY_RUN configuration."
+        ),
     )
 
-    args = parser.parse_args()
-
-    # Validate input file
-    if not Path(args.k6_result).exists():
-        logger.error(f"K6 result file not found: {args.k6_result}")
-        sys.exit(1)
-
-    # Run analysis
-    engine = AnalysisEngine(dry_run=args.dry_run or DRY_RUN)
-    success = engine.run_analysis(args.k6_result)
-
-    sys.exit(0 if success else 1)
+    return parser.parse_args()
 
 
-if __name__ == '__main__':
+# ----------------------------------------------------------------------
+# Main
+# ----------------------------------------------------------------------
+
+def main():
+    """
+    Application entry point.
+    """
+
+    args = parse_arguments()
+
+    # Configure logging.
+    setup_logger(
+        log_level=LOG_LEVEL,
+    )
+
+    logger.info("=" * 80)
+    logger.info("API Test Analysis POC")
+    logger.info("=" * 80)
+
+    # CLI --dry-run takes precedence over environment configuration.
+    dry_run = args.dry_run or DRY_RUN
+
+    logger.info(
+        "Dry run mode: %s",
+        dry_run,
+    )
+
+    if args.execution_id:
+        logger.info(
+            "Execution ID: %s",
+            args.execution_id,
+        )
+
+    engine = APIAnalysisEngine(
+        dry_run=dry_run,
+    )
+
+    success = engine.run_analysis(
+        k6_result_file=args.k6_result,
+        execution_id=args.execution_id,
+    )
+
+    if success:
+        logger.info(
+            "Application finished successfully"
+        )
+        sys.exit(0)
+
+    logger.error(
+        "Application finished with errors"
+    )
+    sys.exit(1)
+
+
+if __name__ == "__main__":
     main()

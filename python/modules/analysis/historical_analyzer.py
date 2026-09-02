@@ -1,193 +1,322 @@
-"""
-Historical Analyzer - Compare current test execution with historical data.
-"""
-
+import logging
 from typing import Any, Dict, List, Optional
-from datetime import datetime
-from logger import get_logger
 
-logger = get_logger('analysis.historical')
+logger = logging.getLogger(__name__)
 
 
 class HistoricalAnalyzer:
-    """Analyzes current execution against historical data from Datadog."""
+    """
+    Analyzes historical API test executions stored in Datadog.
+
+    The analyzer retrieves previous executions for a service/test
+    combination and calculates:
+    - Historical pass/fail counts
+    - Failure rate
+    - Pass rate
+    - Status trend
+    - Whether the current failure has historical context
+    """
 
     def __init__(self, datadog_client):
-        """
-        Initialize historical analyzer.
-
-        Args:
-            datadog_client: Instance of DatadogClient
-        """
         self.datadog_client = datadog_client
-        self.logger = logger
 
-    def get_historical_data(
+    # ------------------------------------------------------------------
+    # Main historical analysis
+    # ------------------------------------------------------------------
+
+    def analyze_test_history(
         self,
         service: str,
         test: str,
-        limit: int = 10
-    ) -> Optional[List[Dict[str, Any]]]:
-        """
-        Retrieve historical execution data from Datadog.
-
-        Args:
-            service: Service name
-            test: Test name
-            limit: Number of previous executions to retrieve
-
-        Returns:
-            List of historical executions (most recent first) or None
-        """
-        try:
-            executions = self.datadog_client.get_previous_executions(
-                service, test, limit
-            )
-            if executions is None:
-                self.logger.warning(
-                    f"No historical data found for {service}/{test}"
-                )
-                return []
-            return executions
-        except Exception as e:
-            self.logger.error(f"Failed to get historical data: {e}")
-            return None
-
-    def extract_status_sequence(
-        self,
-        executions: List[Dict[str, Any]]
-    ) -> List[str]:
-        """
-        Extract status sequence from historical executions.
-
-        Args:
-            executions: List of execution records (most recent first)
-
-        Returns:
-            List of statuses in chronological order (oldest first)
-        """
-        statuses = []
-        for execution in reversed(executions):  # Reverse to get oldest first
-            # Extract status from execution metadata/tags
-            if 'metadata' in execution and 'status' in execution['metadata']:
-                statuses.append(execution['metadata']['status'])
-            elif 'tags' in execution:
-                # Try to extract from tags
-                for tag in execution['tags']:
-                    if tag.startswith('status:'):
-                        status = tag.split(':', 1)[1].upper()
-                        if status in ['PASS', 'FAIL']:
-                            statuses.append(status)
-                            break
-
-        return statuses
-
-    def calculate_statistics(
-        self,
-        current_result: Dict[str, Any],
-        historical_executions: List[Dict[str, Any]]
+        limit: int = 10,
     ) -> Dict[str, Any]:
         """
-        Calculate comparison statistics between current and historical data.
+        Analyze historical executions for one API test.
 
         Args:
-            current_result: Current test execution result
-            historical_executions: List of previous executions
+            service:
+                Service name, for example "order".
+
+            test:
+                Test name, for example "createorder".
+
+            limit:
+                Maximum number of previous executions to retrieve.
 
         Returns:
-            Dictionary with analysis statistics
+            Dictionary containing historical statistics and status trend.
         """
-        try:
-            current_status = current_result.get('status', 'UNKNOWN')
 
-            # Extract historical statuses
-            historical_statuses = self.extract_status_sequence(
-                historical_executions
+        logger.debug(
+            "Analyzing history for service=%s, test=%s",
+            service,
+            test,
+        )
+
+        try:
+            events = self.datadog_client.get_previous_executions(
+                service=service,
+                test=test,
+                limit=limit,
+            )
+        except Exception as exc:
+            logger.error(
+                "Failed to retrieve historical data for "
+                "%s/%s: %s",
+                service,
+                test,
+                exc,
             )
 
-            # Calculate counts
-            total_historical = len(historical_statuses)
-            historical_pass = sum(1 for s in historical_statuses if s == 'PASS')
-            historical_fail = sum(1 for s in historical_statuses if s == 'FAIL')
+            return self._empty_analysis(
+                service=service,
+                test=test,
+            )
 
-            # Calculate rates
-            if total_historical > 0:
-                historical_pass_rate = historical_pass / total_historical
-                historical_fail_rate = historical_fail / total_historical
-            else:
-                historical_pass_rate = 0.0
-                historical_fail_rate = 0.0
+        statuses = []
 
-            # Detect trends
-            recent_5_statuses = historical_statuses[-5:] if total_historical >= 5 else historical_statuses
-            recent_trend = 'deteriorating' if recent_5_statuses and recent_5_statuses[-1] == 'FAIL' else 'improving'
+        for event in events:
+            status = self._extract_status(event)
 
-            # Last pass/fail dates
-            last_pass_idx = None
-            last_fail_idx = None
-            for i, status in enumerate(reversed(historical_statuses)):
-                if status == 'PASS' and last_pass_idx is None:
-                    last_pass_idx = total_historical - i - 1
-                if status == 'FAIL' and last_fail_idx is None:
-                    last_fail_idx = total_historical - i - 1
+            if status:
+                statuses.append(status)
 
-            return {
-                'current_status': current_status,
-                'total_historical': total_historical,
-                'historical_pass_count': historical_pass,
-                'historical_fail_count': historical_fail,
-                'historical_pass_rate': round(historical_pass_rate, 3),
-                'historical_fail_rate': round(historical_fail_rate, 3),
-                'historical_statuses': historical_statuses,
-                'recent_trend': recent_trend,
-                'recent_5_statuses': recent_5_statuses,
-                'last_pass_execution_ago': last_pass_idx,
-                'last_fail_execution_ago': last_fail_idx,
-            }
+        total_executions = len(statuses)
 
-        except Exception as e:
-            self.logger.error(f"Failed to calculate statistics: {e}")
-            return {
-                'error': str(e),
-                'current_status': current_result.get('status', 'UNKNOWN'),
-            }
+        passed = sum(
+            1
+            for status in statuses
+            if status == "PASS"
+        )
 
-    def analyze_historical_comparison(
+        failed = sum(
+            1
+            for status in statuses
+            if status == "FAIL"
+        )
+
+        pass_rate = (
+            passed / total_executions
+            if total_executions > 0
+            else 0.0
+        )
+
+        failure_rate = (
+            failed / total_executions
+            if total_executions > 0
+            else 0.0
+        )
+
+        trend = self._calculate_trend(statuses)
+
+        logger.info(
+            "Historical data for %s/%s: "
+            "%d executions, %d passed, %d failed",
+            service,
+            test,
+            total_executions,
+            passed,
+            failed,
+        )
+
+        return {
+            "service": service.lower(),
+            "test": test.lower(),
+            "total_executions": total_executions,
+            "passed": passed,
+            "failed": failed,
+            "pass_rate": pass_rate,
+            "failure_rate": failure_rate,
+            "statuses": statuses,
+            "trend": trend,
+            "has_history": total_executions > 0,
+            "events": events,
+        }
+
+    # ------------------------------------------------------------------
+    # Extract status
+    # ------------------------------------------------------------------
+
+    def _extract_status(
+        self,
+        event: Dict[str, Any],
+    ) -> Optional[str]:
+        """
+        Extract PASS/FAIL status from a Datadog event.
+
+        The ingestion layer stores status as a tag:
+
+            status:pass
+            status:fail
+
+        Some existing events may also contain status in metadata,
+        so both formats are supported.
+        """
+
+        # --------------------------------------------------------------
+        # 1. Check metadata
+        # --------------------------------------------------------------
+
+        metadata = event.get("metadata")
+
+        if isinstance(metadata, dict):
+            status = metadata.get("status")
+
+            if status:
+                normalized = str(status).upper()
+
+                if normalized in ("PASS", "FAIL"):
+                    return normalized
+
+        # --------------------------------------------------------------
+        # 2. Check top-level status
+        # --------------------------------------------------------------
+
+        status = event.get("status")
+
+        if status:
+            normalized = str(status).upper()
+
+            if normalized in ("PASS", "FAIL"):
+                return normalized
+
+        # --------------------------------------------------------------
+        # 3. Check tags
+        # --------------------------------------------------------------
+
+        tags = event.get("tags", [])
+
+        if isinstance(tags, str):
+            tags = tags.split(",")
+
+        if isinstance(tags, list):
+            for tag in tags:
+                if not isinstance(tag, str):
+                    continue
+
+                tag = tag.strip()
+
+                if tag.startswith("status:"):
+                    value = tag.split(":", 1)[1].upper()
+
+                    if value in ("PASS", "FAIL"):
+                        return value
+
+        # --------------------------------------------------------------
+        # 4. Check event title/text
+        # --------------------------------------------------------------
+
+        title = str(
+            event.get("title", "")
+        ).upper()
+
+        text = str(
+            event.get("text", "")
+        ).upper()
+
+        combined = f"{title} {text}"
+
+        if "API TEST PASS" in combined:
+            return "PASS"
+
+        if "API TEST FAIL" in combined:
+            return "FAIL"
+
+        return None
+
+    # ------------------------------------------------------------------
+    # Calculate trend
+    # ------------------------------------------------------------------
+
+    def _calculate_trend(
+        self,
+        statuses: List[str],
+    ) -> str:
+        """
+        Calculate a simple historical trend.
+
+        Datadog returns the newest events first.
+
+        Examples:
+
+            [PASS, PASS, PASS] -> STABLE_PASS
+            [FAIL, FAIL, FAIL] -> STABLE_FAIL
+            [PASS, FAIL, PASS] -> FLAKY
+            [FAIL, PASS, PASS] -> IMPROVING
+            [PASS, PASS, FAIL] -> DEGRADING
+        """
+
+        if not statuses:
+            return "NO_HISTORY"
+
+        if len(statuses) == 1:
+            if statuses[0] == "PASS":
+                return "STABLE_PASS"
+
+            return "STABLE_FAIL"
+
+        pass_count = statuses.count("PASS")
+        fail_count = statuses.count("FAIL")
+
+        # All executions have the same result.
+        if fail_count == 0:
+            return "STABLE_PASS"
+
+        if pass_count == 0:
+            return "STABLE_FAIL"
+
+        # Count transitions between PASS and FAIL.
+        transitions = 0
+
+        for index in range(1, len(statuses)):
+            if statuses[index] != statuses[index - 1]:
+                transitions += 1
+
+        if transitions >= 2:
+            return "FLAKY"
+
+        # Because statuses are newest -> oldest:
+        #
+        # [FAIL, PASS, PASS]
+        #
+        # means the newest result failed while older results passed.
+        # Therefore the test is degrading.
+        if statuses[0] == "FAIL" and statuses[-1] == "PASS":
+            return "DEGRADING"
+
+        # [PASS, FAIL, FAIL]
+        #
+        # means the newest result passed while older results failed.
+        # Therefore the test is improving.
+        if statuses[0] == "PASS" and statuses[-1] == "FAIL":
+            return "IMPROVING"
+
+        return "MIXED"
+
+    # ------------------------------------------------------------------
+    # Empty analysis
+    # ------------------------------------------------------------------
+
+    def _empty_analysis(
         self,
         service: str,
         test: str,
-        current_result: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """
-        Perform full historical comparison for a test.
-
-        Args:
-            service: Service name
-            test: Test name
-            current_result: Current execution result
-
-        Returns:
-            Dictionary with complete historical analysis or None if error
+        Return a consistent empty historical-analysis structure
+        when Datadog history is unavailable.
         """
-        try:
-            self.logger.info(f"Analyzing historical data for {service}/{test}")
 
-            # Get historical data
-            historical = self.get_historical_data(service, test, limit=10)
-            if historical is None:
-                return None
-
-            # Calculate statistics
-            stats = self.calculate_statistics(current_result, historical)
-
-            return {
-                'service': service,
-                'test': test,
-                'timestamp': datetime.utcnow().isoformat() + 'Z',
-                'historical_analysis': stats,
-                'historical_executions': historical,
-            }
-
-        except Exception as e:
-            self.logger.error(f"Failed to analyze historical comparison: {e}")
-            return None
+        return {
+            "service": service.lower(),
+            "test": test.lower(),
+            "total_executions": 0,
+            "passed": 0,
+            "failed": 0,
+            "pass_rate": 0.0,
+            "failure_rate": 0.0,
+            "statuses": [],
+            "trend": "NO_HISTORY",
+            "has_history": False,
+            "events": [],
+        }

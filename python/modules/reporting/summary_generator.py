@@ -1,188 +1,428 @@
-"""
-Summary Generator - Generate overall test execution summary.
-"""
-
+import logging
+from collections import Counter
 from typing import Any, Dict, List
-from logger import get_logger
 
-logger = get_logger('reporting.summary')
+logger = logging.getLogger(__name__)
 
 
 class SummaryGenerator:
-    """Generates human-readable summary of test execution."""
+    """
+    Generates a human-readable summary from the aggregated
+    API test analysis results.
+    """
 
     def __init__(self):
-        self.logger = logger
+        logger.info("Summary generator initialized")
 
-    def generate_summary(
+    # ------------------------------------------------------------------
+    # Main summary method
+    # ------------------------------------------------------------------
+
+    def generate(
         self,
-        aggregated_results: List[Dict[str, Any]]
+        results: List[Dict[str, Any]],
     ) -> str:
         """
-        Generate overall execution summary.
+        Generate a readable analysis summary.
 
         Args:
-            aggregated_results: Complete aggregated analysis results
+            results:
+                Aggregated test results from ResultAggregator.
 
         Returns:
-            Formatted summary string
+            Multi-line human-readable summary.
         """
-        try:
-            # Calculate statistics
-            total_tests = len(aggregated_results)
-            passed = sum(
-                1 for r in aggregated_results
-                if r.get('current_result', {}).get('status') == 'PASS'
+
+        if not results:
+            return "No API test results available."
+
+        total = len(results)
+
+        passed = sum(
+            1
+            for result in results
+            if str(
+                result.get("status", "")
+            ).upper() == "PASS"
+        )
+
+        failed = total - passed
+
+        pass_rate = (
+            (passed / total) * 100
+            if total > 0
+            else 0.0
+        )
+
+        fail_rate = (
+            (failed / total) * 100
+            if total > 0
+            else 0.0
+        )
+
+        # --------------------------------------------------------------
+        # Failure classifications
+        # --------------------------------------------------------------
+
+        classification_counts = Counter()
+
+        for result in results:
+            classification = self._get_classification(
+                result
             )
-            failed = total_tests - passed
-            pass_percentage = (passed / total_tests * 100) if total_tests > 0 else 0
 
-            # Count by pattern
-            patterns = {}
-            for result in aggregated_results:
-                pattern = result.get('failure_pattern', {}).get('pattern')
-                if pattern:
-                    patterns[pattern] = patterns.get(pattern, 0) + 1
+            if classification:
+                classification_counts[
+                    classification
+                ] += 1
 
-            # Count Jira coverage
-            jira_found = sum(
-                1 for r in aggregated_results
-                if r.get('jira_correlation', {}).get('jira_found', False)
-            )
+        # --------------------------------------------------------------
+        # Affected services
+        # --------------------------------------------------------------
 
-            # Unique services
-            services = set(r.get('service') for r in aggregated_results)
-            affected_services_failed = set(
-                r.get('service') for r in aggregated_results
-                if r.get('current_result', {}).get('status') == 'FAIL'
-            )
+        service_failures = Counter()
 
-            # Build summary
-            summary = "=== API Test Analysis Summary ===\n\n"
-            summary += f"Total Tests Executed: {total_tests}\n"
-            summary += f"Passed: {passed} ({pass_percentage:.1f}%)\n"
-            summary += f"Failed: {failed} ({100-pass_percentage:.1f}%)\n\n"
+        for result in results:
+            status = str(
+                result.get("status", "")
+            ).upper()
 
-            if failed > 0:
-                summary += "Failure Breakdown:\n"
-                persistent = patterns.get('Persistent Failure', 0)
-                flaky = patterns.get('Flaky Failure', 0)
-                new_fail = patterns.get('New Failure', 0)
-
-                if persistent > 0:
-                    summary += f"  - Persistent Failures: {persistent}\n"
-                if flaky > 0:
-                    summary += f"  - Flaky Failures: {flaky}\n"
-                if new_fail > 0:
-                    summary += f"  - New Failures: {new_fail}\n"
-
-                resolved = patterns.get('Resolved Failure', 0)
-                if resolved > 0:
-                    summary += f"  - Resolved Failures: {resolved}\n"
-
-                summary += f"\nAffected Services: {len(affected_services_failed)}\n"
-                for service in sorted(affected_services_failed):
-                    service_failures = sum(
-                        1 for r in aggregated_results
-                        if r.get('service') == service
-                        and r.get('current_result', {}).get('status') == 'FAIL'
+            if status == "FAIL":
+                service = str(
+                    result.get(
+                        "service",
+                        "unknown",
                     )
-                    summary += f"  - {service}: {service_failures} failures\n"
+                ).lower()
 
-                summary += f"\nJira Coverage:\n"
-                summary += f"  - Failures with Jira issues: {jira_found}\n"
-                summary += f"  - Failures without Jira issues: {failed - jira_found}\n"
+                service_failures[service] += 1
 
-            summary += "\n" + "=" * 40 + "\n"
+        # --------------------------------------------------------------
+        # Jira coverage
+        # --------------------------------------------------------------
 
-            return summary
+        failed_results = [
+            result
+            for result in results
+            if str(
+                result.get("status", "")
+            ).upper() == "FAIL"
+        ]
 
-        except Exception as e:
-            self.logger.error(f"Failed to generate summary: {e}")
-            return "Error generating summary."
+        jira_issues = sum(
+            1
+            for result in failed_results
+            if self._has_jira_issue(result)
+        )
 
-    def generate_detailed_summary(
+        jira_without_issue = (
+            len(failed_results) - jira_issues
+        )
+
+        # --------------------------------------------------------------
+        # Build summary
+        # --------------------------------------------------------------
+
+        lines = []
+
+        lines.append(
+            "API TEST ANALYSIS SUMMARY"
+        )
+
+        lines.append(
+            "-" * 50
+        )
+
+        # --------------------------------------------------------------
+        # Execution statistics
+        # --------------------------------------------------------------
+
+        lines.append(
+            f"Total Tests Executed: {total}"
+        )
+
+        lines.append(
+            f"Passed: {passed} ({pass_rate:.1f}%)"
+        )
+
+        lines.append(
+            f"Failed: {failed} ({fail_rate:.1f}%)"
+        )
+
+        # --------------------------------------------------------------
+        # Failure breakdown
+        # --------------------------------------------------------------
+
+        lines.append("")
+
+        lines.append(
+            "Failure Breakdown:"
+        )
+
+        if classification_counts:
+            for classification, count in sorted(
+                classification_counts.items()
+            ):
+                lines.append(
+                    f" - {classification}: {count}"
+                )
+        else:
+            lines.append(
+                " - None"
+            )
+
+        # --------------------------------------------------------------
+        # Affected services
+        # --------------------------------------------------------------
+
+        lines.append("")
+
+        lines.append(
+            "Affected Services:"
+        )
+
+        if service_failures:
+            for service, count in sorted(
+                service_failures.items()
+            ):
+                lines.append(
+                    f" - {service}: {count} failure"
+                    f"{'s' if count != 1 else ''}"
+                )
+        else:
+            lines.append(
+                " - None"
+            )
+
+        # --------------------------------------------------------------
+        # Jira coverage
+        # --------------------------------------------------------------
+
+        lines.append("")
+
+        lines.append(
+            "Jira Coverage:"
+        )
+
+        lines.append(
+            f" - Failures with Jira issues: {jira_issues}"
+        )
+
+        lines.append(
+            f" - Failures without Jira issues: "
+            f"{jira_without_issue}"
+        )
+
+        # --------------------------------------------------------------
+        # Detailed failures
+        # --------------------------------------------------------------
+
+        lines.append("")
+
+        lines.append(
+            "Failure Details:"
+        )
+
+        if not failed_results:
+            lines.append(
+                " - No failures detected"
+            )
+
+        else:
+            for result in failed_results:
+                lines.extend(
+                    self._format_failure(
+                        result
+                    )
+                )
+
+        # --------------------------------------------------------------
+        # Overall status
+        # --------------------------------------------------------------
+
+        lines.append("")
+
+        lines.append(
+            "Overall Status: "
+            + (
+                "FAILED"
+                if failed > 0
+                else "PASSED"
+            )
+        )
+
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Classification extraction
+    # ------------------------------------------------------------------
+
+    def _get_classification(
         self,
-        aggregated_results: List[Dict[str, Any]]
+        result: Dict[str, Any],
     ) -> str:
         """
-        Generate detailed summary with all test results.
-
-        Args:
-            aggregated_results: Complete aggregated analysis results
-
-        Returns:
-            Detailed formatted summary
+        Extract the classification name from an aggregated result.
         """
-        try:
-            summary = self.generate_summary(aggregated_results)
 
-            # Add detailed results for failed tests
-            failed_results = [
-                r for r in aggregated_results
-                if r.get('current_result', {}).get('status') == 'FAIL'
-            ]
+        classification = result.get(
+            "classification"
+        )
 
-            if failed_results:
-                summary += "\nFailed Test Details:\n"
-                summary += "-" * 40 + "\n"
+        if isinstance(classification, dict):
+            value = classification.get(
+                "pattern"
+            )
 
-                for result in failed_results:
-                    service = result.get('service')
-                    test = result.get('test')
-                    pattern = result.get('failure_pattern', {}).get('pattern')
-                    http_status = result.get('current_result', {}).get('http_status')
-                    error = result.get('current_result', {}).get('error_message', '')
+            if value:
+                return str(value)
 
-                    summary += f"\n{service}/{test}\n"
-                    summary += f"  Status: {pattern}\n"
-                    summary += f"  HTTP: {http_status}\n"
+            value = classification.get(
+                "classification"
+            )
 
-                    if error:
-                        summary += f"  Error: {error[:100]}...\n"
+            if value:
+                return str(value)
 
-                    # Add Jira info
-                    jira = result.get('jira_correlation', {})
-                    if jira.get('jira_found'):
-                        summary += f"  Jira: {jira.get('jira_id')} ({jira.get('jira_status')})\n"
-                    else:
-                        summary += f"  Jira: {jira.get('recommendation', 'No issue')}\n"
+        elif classification:
+            return str(classification)
 
-                    # Add AI analysis
-                    ai = result.get('ai_analysis', {})
-                    if ai:
-                        summary += f"  AI Category: {ai.get('failure_category')}\n"
-                        summary += f"  Reason: {ai.get('failure_reason', 'Unknown')[:80]}...\n"
+        return "Unknown"
 
-            return summary
+    # ------------------------------------------------------------------
+    # Jira check
+    # ------------------------------------------------------------------
 
-        except Exception as e:
-            self.logger.error(f"Failed to generate detailed summary: {e}")
-            return "Error generating detailed summary."
-
-    def to_json(
+    def _has_jira_issue(
         self,
-        aggregated_results: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+        result: Dict[str, Any],
+    ) -> bool:
         """
-        Convert results to JSON-serializable format.
-
-        Args:
-            aggregated_results: Aggregated results
-
-        Returns:
-            JSON-friendly dictionary
+        Determine whether an aggregated result has a Jira issue.
         """
-        return {
-            'timestamp': aggregated_results[0].get('timestamp') if aggregated_results else None,
-            'total_tests': len(aggregated_results),
-            'passed': sum(
-                1 for r in aggregated_results
-                if r.get('current_result', {}).get('status') == 'PASS'
-            ),
-            'failed': sum(
-                1 for r in aggregated_results
-                if r.get('current_result', {}).get('status') == 'FAIL'
-            ),
-            'results': aggregated_results,
-        }
+
+        jira = result.get(
+            "jira"
+        )
+
+        if not isinstance(jira, dict):
+            return False
+
+        return bool(
+            jira.get(
+                "has_issue",
+                jira.get(
+                    "has_jira_issue",
+                    False,
+                ),
+            )
+        )
+
+    # ------------------------------------------------------------------
+    # Failure formatting
+    # ------------------------------------------------------------------
+
+    def _format_failure(
+        self,
+        result: Dict[str, Any],
+    ) -> List[str]:
+        """
+        Format one failed test for the summary.
+        """
+
+        service = result.get(
+            "service",
+            "unknown",
+        )
+
+        test = result.get(
+            "test",
+            "unknown",
+        )
+
+        method = result.get(
+            "method",
+            "",
+        )
+
+        endpoint = result.get(
+            "endpoint",
+            "",
+        )
+
+        http_status = result.get(
+            "http_status",
+            "",
+        )
+
+        duration_ms = result.get(
+            "duration_ms",
+            0,
+        )
+
+        error_message = result.get(
+            "error_message",
+            "",
+        )
+
+        classification = self._get_classification(
+            result
+        )
+
+        jira = result.get(
+            "jira",
+            {},
+        )
+
+        if not isinstance(jira, dict):
+            jira = {}
+
+        issue_key = jira.get(
+            "issue_key"
+        )
+
+        lines = []
+
+        lines.append(
+            f" - {service}/{test}"
+        )
+
+        if method or endpoint:
+            lines.append(
+                f"   Request: {method} {endpoint}"
+            )
+
+        if http_status != "":
+            lines.append(
+                f"   HTTP Status: {http_status}"
+            )
+
+        if duration_ms != "":
+            try:
+                lines.append(
+                    f"   Duration: "
+                    f"{float(duration_ms):.2f} ms"
+                )
+            except (
+                TypeError,
+                ValueError,
+            ):
+                lines.append(
+                    f"   Duration: {duration_ms}"
+                )
+
+        lines.append(
+            f"   Classification: {classification}"
+        )
+
+        if error_message:
+            lines.append(
+                f"   Error: {error_message}"
+            )
+
+        if issue_key:
+            lines.append(
+                f"   Jira Issue: {issue_key}"
+            )
+
+        return lines

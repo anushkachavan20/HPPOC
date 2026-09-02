@@ -1,6 +1,7 @@
 import argparse
 import logging
 import sys
+from pathlib import Path
 from typing import Optional
 
 from config import DRY_RUN, LOG_LEVEL
@@ -362,6 +363,13 @@ class APIAnalysisEngine:
                     aggregated_results
                 )
             )
+
+            report_path = Path(__file__).parent / "reports" / "api_test_analysis.csv"
+            DatadogPublisher.write_csv(
+                aggregated_results,
+                str(report_path),
+            )
+            logger.info("CSV analysis report written to %s", report_path)
 
             print("\n")
             print("=" * 80)

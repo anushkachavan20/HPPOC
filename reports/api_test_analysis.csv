@@ -1,0 +1,11 @@
+execution_id,service,test,method,endpoint,status,http_status,duration_ms,failure_type,historical_pass_rate,historical_failure_rate,historical_trend,jira_issue,jira_url,error_message
+sample_run_001,customer,createcustomer,POST,/customers,PASS,201,125.0,Resolved Failure,0.8,0.2,FLAKY,,,
+sample_run_001,customer,getcustomer,GET,/customers/{id},PASS,200,95.0,Resolved Failure,0.8,0.2,FLAKY,,,
+sample_run_001,customer,updatecustomer,PUT,/customers/{id},PASS,200,110.0,Resolved Failure,0.8,0.2,FLAKY,,,
+sample_run_001,customer,deletecustomer,DELETE,/customers/{id},PASS,204,80.0,Resolved Failure,0.8,0.2,FLAKY,,,
+sample_run_001,order,createorder,POST,/orders,FAIL,500,2500.0,Flaky Failure,0.8,0.2,FLAKY,,,Internal Server Error - Database connection timeout
+sample_run_001,order,getorder,GET,/orders/{id},PASS,200,150.0,Resolved Failure,0.8,0.2,FLAKY,,,
+sample_run_001,order,updateorder,PUT,/orders/{id},FAIL,504,30000.0,Flaky Failure,0.8,0.2,FLAKY,,,Gateway Timeout - Request timed out after 30s
+sample_run_001,payment,createpayment,POST,/payments,PASS,200,800.0,Resolved Failure,0.8,0.2,FLAKY,,,
+sample_run_001,payment,getpayment,GET,/payments/{id},PASS,200,120.0,Resolved Failure,0.8,0.2,FLAKY,,,
+sample_run_001,payment,refundpayment,POST,/payments/{id}/refund,FAIL,401,150.0,Flaky Failure,0.8,0.2,FLAKY,,,Unauthorized - Invalid authentication token

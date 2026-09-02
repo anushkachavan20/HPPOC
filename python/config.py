@@ -62,6 +62,11 @@ JIRA_PROJECT_KEY = os.getenv(
     "PROJ"
 )
 
+DATADOG_DASHBOARD_ID = os.getenv(
+    "DATADOG_DASHBOARD_ID",
+    ""
+)
+
 
 # ============================================================
 # Analysis Configuration

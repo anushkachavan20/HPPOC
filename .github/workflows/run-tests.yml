@@ -151,6 +151,7 @@ jobs:
           DATADOG_API_KEY: ${{ secrets.DATADOG_API_KEY }}
           DATADOG_APP_KEY: ${{ secrets.DATADOG_APP_KEY }}
           DATADOG_SITE: ${{ secrets.DATADOG_SITE }}
+          DATADOG_DASHBOARD_ID: ${{ secrets.DATADOG_DASHBOARD_ID }}
 
           JIRA_API_URL: ${{ secrets.JIRA_API_URL }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
@@ -199,4 +200,5 @@ jobs:
           path: |
             python/**/*.log
             python/*.log
+            python/reports/api_test_analysis.csv
           if-no-files-found: ignore

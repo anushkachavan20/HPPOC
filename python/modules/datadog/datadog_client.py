@@ -141,6 +141,52 @@ class DatadogClient:
             return False
 
     # ------------------------------------------------------------------
+    # Dashboards
+    # ------------------------------------------------------------------
+
+    def create_dashboard(self, dashboard: Dict[str, Any]) -> Optional[str]:
+        """Create a Datadog dashboard and return its ID."""
+        url = f"{self.base_url}/api/v1/dashboard"
+
+        try:
+            response = self.session.post(url, json=dashboard, timeout=30)
+            if response.status_code in (200, 201):
+                return response.json().get("id")
+
+            logger.error(
+                "Failed to create Datadog dashboard: %s - %s",
+                response.status_code,
+                response.text,
+            )
+            return None
+        except requests.RequestException as exc:
+            logger.error("Error creating Datadog dashboard: %s", exc)
+            return None
+
+    def update_dashboard(
+        self,
+        dashboard_id: str,
+        dashboard: Dict[str, Any],
+    ) -> bool:
+        """Update an existing Datadog dashboard."""
+        url = f"{self.base_url}/api/v1/dashboard/{dashboard_id}"
+
+        try:
+            response = self.session.put(url, json=dashboard, timeout=30)
+            if response.status_code == 200:
+                return True
+
+            logger.error(
+                "Failed to update Datadog dashboard: %s - %s",
+                response.status_code,
+                response.text,
+            )
+            return False
+        except requests.RequestException as exc:
+            logger.error("Error updating Datadog dashboard: %s", exc)
+            return False
+
+    # ------------------------------------------------------------------
     # Historical Events
     # ------------------------------------------------------------------
 

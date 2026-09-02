@@ -397,6 +397,10 @@ class APIAnalysisEngine:
                 "Datadog publishing completed: %s",
                 publish_result,
             )
+            print(
+                "DATADOG_PUBLISH_RESULT="
+                + str(publish_result)
+            )
 
             logger.info("=" * 80)
             logger.info("Analysis Complete!")

@@ -436,6 +436,21 @@ class DatadogPublisher:
                 DATADOG_DASHBOARD_ID,
                 dashboard,
             )
+            if updated:
+                logger.info(
+                    "Updated Datadog dashboard: %s",
+                    DATADOG_DASHBOARD_ID,
+                )
+                logger.info(
+                    "Datadog dashboard URL: https://app.%s/dashboard/%s",
+                    self.datadog_client.site,
+                    DATADOG_DASHBOARD_ID,
+                )
+            else:
+                logger.error(
+                    "Datadog dashboard update failed: %s",
+                    DATADOG_DASHBOARD_ID,
+                )
             return DATADOG_DASHBOARD_ID if updated else ""
 
         dashboard_id = self.datadog_client.create_dashboard(dashboard)

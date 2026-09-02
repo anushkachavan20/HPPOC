@@ -1,369 +1,617 @@
-import logging
-from typing import Any, Dict, Optional
+"""
+Jira correlation logic.
 
-logger = logging.getLogger(__name__)
+Searches Jira for existing issues related to failed API tests.
+"""
+
+from typing import Any, Dict, List, Optional
+
+from logger import get_logger
+
+logger = get_logger("jira.correlation")
 
 
-class JiraCorrelation:
+class JiraCorrelator:
     """
-    Correlates classified API test failures with existing Jira issues.
-
-    The correlation is based primarily on the failure classification and
-    the service/test information.
+    Correlates failed API test results with existing Jira issues.
     """
 
-    def __init__(self, jira_client):
+    def __init__(
+        self,
+        jira_client,
+        project_key: Optional[str] = None,
+    ):
         self.jira_client = jira_client
+        self.project_key = project_key
+        self.logger = logger
 
-        logger.info("Jira correlation initialized")
+    # ========================================================
+    # Public API
+    # ========================================================
 
-    # ------------------------------------------------------------------
-    # Main correlation method
-    # ------------------------------------------------------------------
+    def correlate_failures(
+        self,
+        test_results: List[Dict[str, Any]],
+        classifications: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Correlate failed tests with Jira issues.
+
+        Args:
+            test_results:
+                Current k6 test results.
+
+            classifications:
+                Failure classification information.
+
+        Returns:
+            Dictionary keyed by test identifier.
+        """
+
+        correlations = {}
+
+        if not test_results:
+            return correlations
+
+        for result in test_results:
+
+            status = str(
+                result.get("status", "")
+            ).upper()
+
+            # Only failed tests need Jira correlation.
+            if status != "FAIL":
+                continue
+
+            service = str(
+                result.get("service", "")
+            ).strip()
+
+            test_name = str(
+                result.get("test")
+                or result.get("test_name")
+                or ""
+            ).strip()
+
+            classification = self._get_classification(
+                classifications,
+                service,
+                test_name,
+            )
+
+            correlation = self.correlate_failure(
+                result=result,
+                classification=classification,
+            )
+
+            test_id = self._build_test_id(
+                service,
+                test_name,
+            )
+
+            correlations[test_id] = correlation
+
+        return correlations
 
     def correlate_failure(
         self,
-        test_result,
-        classification: Optional[Dict[str, Any]] = None,
+        result: Dict[str, Any],
+        classification: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Search Jira for issues related to the current failure.
-
-        Args:
-            test_result:
-                Current K6TestResult.
-
-            classification:
-                Result produced by FailureClassifier.
-
-        Returns:
-            Jira correlation result.
+        Search Jira for an issue related to one failed test.
         """
 
-        classification = classification or {}
+        service = str(
+            result.get("service", "")
+        ).strip()
 
-        service = test_result.service.lower()
-        test_name = test_result.test_name.lower()
-        status = test_result.status.upper()
+        test_name = str(
+            result.get("test")
+            or result.get("test_name")
+            or ""
+        ).strip()
 
-        classification_name = str(
-            classification.get(
-                "classification",
-                classification.get("pattern", ""),
-            )
+        endpoint = str(
+            result.get("endpoint", "")
+        ).strip()
+
+        http_status = result.get(
+            "http_status"
         )
 
-        logger.debug(
-            "Jira correlation for %s/%s: status=%s, classification=%s",
+        if not classification:
+            classification = "Failure"
+
+        self.logger.info(
+            "Searching Jira for failure: "
+            "service=%s, test=%s, classification=%s",
             service,
             test_name,
-            status,
-            classification_name,
+            classification,
         )
 
-        # --------------------------------------------------------------
-        # Healthy / passing tests do not need Jira correlation.
-        # --------------------------------------------------------------
+        # ----------------------------------------------------
+        # Build several valid JQL queries.
+        #
+        # We deliberately use summary ~ because the POC is
+        # trying to find existing bugs/tasks related to the
+        # failing API test.
+        # ----------------------------------------------------
 
-        if status == "PASS":
-            return {
-                "has_jira_issue": False,
-                "issue_key": None,
-                "issue_summary": None,
-                "issue_url": None,
-                "classification": classification_name,
-                "reason": "Test passed",
-            }
-
-        # --------------------------------------------------------------
-        # Only attempt Jira correlation for a failure.
-        # --------------------------------------------------------------
-
-        if status != "FAIL":
-            return {
-                "has_jira_issue": False,
-                "issue_key": None,
-                "issue_summary": None,
-                "issue_url": None,
-                "classification": classification_name,
-                "reason": f"Unsupported status: {status}",
-            }
-
-        # --------------------------------------------------------------
-        # Build search terms.
-        # --------------------------------------------------------------
-
-        search_terms = self._build_search_terms(
+        queries = self._build_search_queries(
             service=service,
             test_name=test_name,
-            classification=classification_name,
+            classification=classification,
+            endpoint=endpoint,
+            http_status=http_status,
         )
 
-        for search_term in search_terms:
-            try:
-                logger.debug(
-                    "Searching Jira using: %s",
-                    search_term,
+        for jql in queries:
+
+            self.logger.debug(
+                "Jira JQL: %s",
+                jql,
+            )
+
+            issues = self._search_jira(
+                jql,
+                max_results=5,
+            )
+
+            if issues:
+                issue = issues[0]
+
+                formatted = self._format_issue(
+                    issue
                 )
 
-                issues = self._search_jira(
-                    search_term
+                self.logger.info(
+                    "Found Jira issue %s for %s/%s",
+                    formatted.get("jira_id"),
+                    service,
+                    test_name,
                 )
 
-                if issues:
-                    issue = issues[0]
+                return {
+                    "has_issue": True,
+                    "issue_key": formatted.get(
+                        "jira_id"
+                    ),
+                    "issue_summary": formatted.get(
+                        "summary"
+                    ),
+                    "issue_url": formatted.get(
+                        "url"
+                    ),
+                    "reason": (
+                        "Matching Jira issue found"
+                    ),
+                }
 
-                    result = self._build_issue_result(
-                        issue=issue,
-                        classification=classification_name,
-                    )
-
-                    logger.info(
-                        "Jira issue correlated for %s/%s: %s",
-                        service,
-                        test_name,
-                        result.get("issue_key"),
-                    )
-
-                    return result
-
-            except Exception as exc:
-                logger.warning(
-                    "Jira search failed for '%s': %s",
-                    search_term,
-                    exc,
-                )
-
-        # --------------------------------------------------------------
-        # No matching Jira issue found.
-        # --------------------------------------------------------------
-
-        logger.info(
+        self.logger.info(
             "No Jira issue found for %s/%s",
             service,
             test_name,
         )
 
         return {
-            "has_jira_issue": False,
+            "has_issue": False,
             "issue_key": None,
             "issue_summary": None,
             "issue_url": None,
-            "classification": classification_name,
             "reason": "No matching Jira issue found",
         }
 
-    # ------------------------------------------------------------------
-    # Search terms
-    # ------------------------------------------------------------------
+    # ========================================================
+    # Build JQL
+    # ========================================================
 
-    def _build_search_terms(
+    def _build_search_queries(
         self,
         service: str,
         test_name: str,
         classification: str,
-    ):
+        endpoint: str = "",
+        http_status: Any = None,
+    ) -> List[str]:
         """
-        Build Jira search terms from the service, test and
-        failure classification.
+        Build valid Jira JQL queries from the failure data.
 
-        Multiple search terms are tried from most specific to
-        more general.
+        Queries are ordered from most specific to least specific.
         """
 
-        terms = []
+        queries = []
 
-        # Most specific search.
-        if service and test_name and classification:
-            terms.append(
-                f'"{service}" AND '
-                f'"{test_name}" AND '
-                f'"{classification}"'
+        service_value = self._escape_jql_text(
+            service
+        )
+
+        test_value = self._escape_jql_text(
+            test_name
+        )
+
+        classification_value = self._escape_jql_text(
+            classification
+        )
+
+        endpoint_value = self._escape_jql_text(
+            endpoint
+        )
+
+        # ----------------------------------------------------
+        # Query 1:
+        # Service + test + classification
+        # ----------------------------------------------------
+
+        if service_value and test_value and classification_value:
+
+            queries.append(
+                'summary ~ "%s" AND '
+                'summary ~ "%s" AND '
+                'summary ~ "%s"'
+                % (
+                    service_value,
+                    test_value,
+                    classification_value,
+                )
             )
 
-        # Service + test.
-        if service and test_name:
-            terms.append(
-                f'"{service}" AND "{test_name}"'
+        # ----------------------------------------------------
+        # Query 2:
+        # Service + test
+        # ----------------------------------------------------
+
+        if service_value and test_value:
+
+            queries.append(
+                'summary ~ "%s" AND '
+                'summary ~ "%s"'
+                % (
+                    service_value,
+                    test_value,
+                )
             )
 
-        # Service + classification.
-        if service and classification:
-            terms.append(
-                f'"{service}" AND "{classification}"'
+        # ----------------------------------------------------
+        # Query 3:
+        # Service + classification
+        # ----------------------------------------------------
+
+        if service_value and classification_value:
+
+            queries.append(
+                'summary ~ "%s" AND '
+                'summary ~ "%s"'
+                % (
+                    service_value,
+                    classification_value,
+                )
             )
 
-        # Test only.
-        if test_name:
-            terms.append(
-                f'"{test_name}"'
+        # ----------------------------------------------------
+        # Query 4:
+        # Test name only
+        # ----------------------------------------------------
+
+        if test_value:
+
+            queries.append(
+                'summary ~ "%s"'
+                % test_value
             )
+
+        # ----------------------------------------------------
+        # Query 5:
+        # Endpoint
+        # ----------------------------------------------------
+
+        if endpoint_value:
+
+            queries.append(
+                'summary ~ "%s"'
+                % endpoint_value
+            )
+
+        # ----------------------------------------------------
+        # Add project restriction when configured.
+        #
+        # Example:
+        #
+        # project = ABC AND summary ~ "GetPost"
+        # ----------------------------------------------------
+
+        if self.project_key:
+
+            project = self._escape_jql_identifier(
+                self.project_key
+            )
+
+            queries = [
+                f"project = {project} AND ({query})"
+                for query in queries
+            ]
 
         # Remove duplicates while preserving order.
-        return list(dict.fromkeys(terms))
+        unique_queries = []
 
-    # ------------------------------------------------------------------
-    # Jira search
-    # ------------------------------------------------------------------
+        for query in queries:
+
+            if query not in unique_queries:
+                unique_queries.append(query)
+
+        return unique_queries
+
+    # ========================================================
+    # Jira Search
+    # ========================================================
 
     def _search_jira(
         self,
-        search_term: str,
-    ):
+        jql: str,
+        max_results: int = 5,
+    ) -> Optional[List[Dict[str, Any]]]:
         """
-        Execute a Jira search.
-
-        Supports the common search method names used by the
-        JiraClient implementation.
+        Call the Jira client's search method.
         """
 
-        # Preferred method.
-        if hasattr(self.jira_client, "search_issues"):
-            return self.jira_client.search_issues(
-                search_term
+        try:
+
+            # Preferred method used by our JiraClient.
+            if hasattr(
+                self.jira_client,
+                "search_issues",
+            ):
+
+                result = self.jira_client.search_issues(
+                    jql=jql,
+                    max_results=max_results,
+                )
+
+                return result or []
+
+            # Backward compatibility.
+            if hasattr(
+                self.jira_client,
+                "search",
+            ):
+
+                result = self.jira_client.search(
+                    jql,
+                    max_results=max_results,
+                )
+
+                return result or []
+
+            # Additional backward compatibility.
+            if hasattr(
+                self.jira_client,
+                "search_jira",
+            ):
+
+                result = self.jira_client.search_jira(
+                    jql,
+                    max_results=max_results,
+                )
+
+                return result or []
+
+            self.logger.error(
+                "Jira client does not expose a search method."
             )
 
-        # Backward compatibility.
-        if hasattr(self.jira_client, "search"):
-            return self.jira_client.search(
-                search_term
+            return []
+
+        except Exception as exc:
+
+            self.logger.error(
+                "Jira search error: %s",
+                exc,
             )
 
-        if hasattr(self.jira_client, "search_jira"):
-            return self.jira_client.search_jira(
-                search_term
-            )
+            return []
 
-        raise AttributeError(
-            "JiraClient does not provide a supported "
-            "issue-search method"
-        )
+    # ========================================================
+    # Formatting
+    # ========================================================
 
-    # ------------------------------------------------------------------
-    # Build Jira result
-    # ------------------------------------------------------------------
-
-    def _build_issue_result(
+    def _format_issue(
         self,
-        issue,
-        classification: str,
+        issue: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
-        Normalize a Jira issue into the structure used by the
-        reporting layer.
+        Format a Jira issue.
         """
 
-        # --------------------------------------------------------------
-        # JiraClient may return either:
-        #
-        # 1. A dictionary
-        # 2. A Jira issue object
-        # --------------------------------------------------------------
+        if hasattr(
+            self.jira_client,
+            "format_issue",
+        ):
 
-        if isinstance(issue, dict):
-            issue_key = issue.get("key")
+            try:
+                return self.jira_client.format_issue(
+                    issue
+                )
 
-            fields = issue.get(
-                "fields",
-                {},
-            )
+            except Exception:
+                pass
 
-            if not isinstance(fields, dict):
-                fields = {}
-
-            summary = fields.get(
-                "summary"
-            ) or issue.get(
-                "summary"
-            )
-
-            issue_url = issue.get(
-                "self"
-            ) or issue.get(
-                "url"
-            )
-
-        else:
-            issue_key = getattr(
-                issue,
-                "key",
-                None,
-            )
-
-            fields = getattr(
-                issue,
-                "fields",
-                None,
-            )
-
-            summary = getattr(
-                fields,
-                "summary",
-                None,
-            )
-
-            issue_url = getattr(
-                issue,
-                "self",
-                None,
-            )
-
-        # --------------------------------------------------------------
-        # Construct Jira URL when the client returned only the key.
-        # --------------------------------------------------------------
-
-        if issue_key and not issue_url:
-            issue_url = self._build_issue_url(
-                issue_key
-            )
+        fields = issue.get(
+            "fields",
+            {},
+        )
 
         return {
-            "has_jira_issue": bool(issue_key),
-            "issue_key": issue_key,
-            "issue_summary": summary,
-            "issue_url": issue_url,
-            "classification": classification,
-            "reason": (
-                "Matching Jira issue found"
-                if issue_key
-                else "Jira issue returned without key"
+            "jira_id": issue.get(
+                "key"
+            ),
+            "summary": fields.get(
+                "summary"
+            ),
+            "status": self._get_status_name(
+                fields.get("status")
+            ),
+            "priority": self._get_status_name(
+                fields.get("priority")
+            ),
+            "labels": fields.get(
+                "labels",
+                [],
+            ),
+            "url": self._build_issue_url(
+                issue.get("key")
             ),
         }
 
-    # ------------------------------------------------------------------
-    # Build Jira URL
-    # ------------------------------------------------------------------
+    # ========================================================
+    # Helpers
+    # ========================================================
+
+    def _get_classification(
+        self,
+        classifications: Optional[Dict[str, Any]],
+        service: str,
+        test_name: str,
+    ) -> str:
+        """
+        Extract classification for a test.
+        """
+
+        if not classifications:
+            return "Failure"
+
+        test_id = self._build_test_id(
+            service,
+            test_name,
+        )
+
+        classification = classifications.get(
+            test_id
+        )
+
+        if isinstance(
+            classification,
+            dict,
+        ):
+
+            return str(
+                classification.get(
+                    "classification"
+                )
+                or classification.get(
+                    "pattern"
+                )
+                or "Failure"
+            )
+
+        if classification:
+            return str(
+                classification
+            )
+
+        return "Failure"
+
+    def _build_test_id(
+        self,
+        service: str,
+        test_name: str,
+    ) -> str:
+        """
+        Build a consistent test identifier.
+        """
+
+        return (
+            f"{service}:{test_name}"
+        )
+
+    @staticmethod
+    def _escape_jql_text(
+        value: str,
+    ) -> str:
+        """
+        Escape text used inside a JQL quoted string.
+        """
+
+        if not value:
+            return ""
+
+        return (
+            str(value)
+            .replace("\\", "\\\\")
+            .replace('"', '\\"')
+        )
+
+    @staticmethod
+    def _escape_jql_identifier(
+        value: str,
+    ) -> str:
+        """
+        Escape a JQL identifier such as a project key.
+
+        Normal Jira project keys such as ABC or PROJ are already
+        safe, so this mainly protects unusual values.
+        """
+
+        value = str(value).strip()
+
+        if (
+            value.isalnum()
+            and "-" not in value
+            and " " not in value
+        ):
+            return value
+
+        return (
+            '"'
+            + value.replace('"', '\\"')
+            + '"'
+        )
 
     def _build_issue_url(
         self,
-        issue_key: str,
+        issue_key: Optional[str],
     ) -> Optional[str]:
         """
-        Build a Jira browse URL using the Jira client's configured
-        base URL, when available.
+        Build Jira browse URL.
         """
 
-        base_url = getattr(
-            self.jira_client,
-            "base_url",
-            None,
-        )
-
-        if not base_url:
-            base_url = getattr(
-                self.jira_client,
-                "url",
-                None,
-            )
-
-        if not base_url:
+        if not issue_key:
             return None
 
-        base_url = str(base_url).rstrip("/")
+        jira_url = getattr(
+            self.jira_client,
+            "jira_url",
+            "",
+        )
 
-        # Avoid duplicating /browse when a Jira client happens
-        # to expose a URL containing it.
-        if base_url.endswith("/browse"):
-            return f"{base_url}/{issue_key}"
+        if not jira_url:
+            return None
 
-        return f"{base_url}/browse/{issue_key}"
+        return (
+            f"{jira_url.rstrip('/')}"
+            f"/browse/{issue_key}"
+        )
+
+    @staticmethod
+    def _get_status_name(
+        value: Any,
+    ) -> str:
+        """
+        Extract a Jira status/priority name.
+        """
+
+        if isinstance(
+            value,
+            dict,
+        ):
+
+            return str(
+                value.get(
+                    "name",
+                    "",
+                )
+            )
+
+        return str(
+            value or ""
+        )

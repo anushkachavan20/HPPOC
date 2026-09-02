@@ -158,6 +158,13 @@ jobs:
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
           JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
 
+          # Non-secret analysis thresholds. These do not require .env in CI.
+          HISTORICAL_LOOKBACK_DAYS: "10"
+          FAILURE_PERSISTENT_THRESHOLD: "0.70"
+          FAILURE_FLAKY_MIN_ALTERNATIONS: "2"
+          FAILURE_OCCURRENCE_THRESHOLD: "6"
+          RESOLUTION_SUCCESS_THRESHOLD: "3"
+
           # This workflow is intended to publish live metrics and create/update
           # the Datadog dashboard. Use --dry-run locally when needed.
           DRY_RUN: "False"

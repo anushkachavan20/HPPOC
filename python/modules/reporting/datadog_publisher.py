@@ -320,6 +320,10 @@ class DatadogPublisher:
         timestamp = int(time.time())
 
         tags = self._build_tags(result)
+        current_tags = [
+            tag for tag in tags
+            if not tag.startswith("execution_id:")
+        ]
         jira = result.get("jira") or {}
         has_jira = bool(jira.get("has_issue", False))
         jira_action = jira.get(
@@ -362,7 +366,7 @@ class DatadogPublisher:
                 "metric": "api_test.current_fail_count",
                 "type": "gauge",
                 "points": [[timestamp, 1 if status == "FAIL" else 0]],
-                "tags": tags,
+                "tags": current_tags,
             },
             {
                 "metric": "api_test.response_time_ms",
@@ -584,6 +588,7 @@ class DatadogPublisher:
                 self._table_widget(
                     "Failed API Classification",
                     "sum:api_test.current_fail_count{status:fail} by {service,test,failure_type,http_status}",
+                    aggregator="last",
                 ),
                 self._table_widget(
                     "Jira Actions",
@@ -656,7 +661,11 @@ class DatadogPublisher:
         }
 
     @staticmethod
-    def _table_widget(title: str, *queries: str) -> Dict[str, Any]:
+    def _table_widget(
+        title: str,
+        *queries: str,
+        aggregator: str = "sum",
+    ) -> Dict[str, Any]:
         requests = [
             {
                 "queries": [
@@ -664,7 +673,7 @@ class DatadogPublisher:
                         "data_source": "metrics",
                         "name": f"query{index}",
                         "query": query,
-                        "aggregator": "sum",
+                        "aggregator": aggregator,
                     }
                     for index, query in enumerate(queries, start=1)
                 ],

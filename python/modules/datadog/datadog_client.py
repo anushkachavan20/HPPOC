@@ -362,7 +362,10 @@ class DatadogClient:
 
         events = self.query_events(
             query=query,
-            page_size=(limit * 2) + 1,
+            # One execution can have both ingestion and analysis events.
+            # Fetch extra events so duplicate records do not hide older
+            # executions before the limit is applied.
+            page_size=max(100, (limit * 4) + 1),
             sort="timestamp_desc",
         )
 

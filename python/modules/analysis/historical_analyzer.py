@@ -127,6 +127,13 @@ class HistoricalAnalyzer:
             failed,
         )
 
+        logger.debug(
+            "Classification history for %s/%s: statuses=%s",
+            service,
+            test,
+            statuses,
+        )
+
         return {
             "service": service.lower(),
             "test": test.lower(),

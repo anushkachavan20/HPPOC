@@ -79,9 +79,15 @@ class FailureClassifier:
         # ----------------------------------------------------
 
         if current_status == "PASS":
+            recent_statuses = ["PASS"] + statuses
 
-            # Previously had failures -> resolved
-            if failed > 0:
+            # A resolution requires five consecutive successful runs,
+            # including the current run, after a previous failure.
+            if (
+                failed > 0
+                and len(recent_statuses) >= 5
+                and all(status == "PASS" for status in recent_statuses[:5])
+            ):
                 return "Resolved Failure"
 
             return "Healthy"

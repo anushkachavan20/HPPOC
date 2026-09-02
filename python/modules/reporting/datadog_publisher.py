@@ -424,10 +424,6 @@ class DatadogPublisher:
                     "Jira Actions",
                     "sum:api_test.jira_action_count{jira_action:create OR jira_action:update} by {service,test,jira_action,jira_issue_key}",
                 ),
-                self._event_stream_widget(
-                    "Jira Recommendations",
-                    "tags:jira_action:create OR tags:jira_action:update",
-                ),
             ],
         }
 
@@ -501,18 +497,6 @@ class DatadogPublisher:
                 "title": title,
                 "type": "query_table",
                 "requests": requests,
-            },
-        }
-
-    @staticmethod
-    def _event_stream_widget(title: str, query: str) -> Dict[str, Any]:
-        return {
-            "definition": {
-                "title": title,
-                "type": "event_stream",
-                "query": query,
-                "event_size": "l",
-                "show_title": True,
             },
         }
 

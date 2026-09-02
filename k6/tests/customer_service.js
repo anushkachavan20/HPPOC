@@ -24,6 +24,7 @@ export const options = {
 };
 
 const BASE_URL = "https://jsonplaceholder.typicode.com";
+const failureScenario = __ENV.FAIL_SCENARIO || "none";
 
 export default function () {
 
@@ -86,21 +87,23 @@ export default function () {
 
     group("JSONPlaceholder Service - NotFound", function () {
 
+        const expectedStatus = failureScenario === "404" ? 404 : 200;
+        const requestPath = failureScenario === "404" ? "/posts/999999999" : "/posts/1";
         const response = http.get(
-            `${BASE_URL}/posts/999999999`,
+            `${BASE_URL}${requestPath}`,
             {
                 tags: {
                     service: "jsonplaceholder",
                     test: "NotFound",
-                    expected_status: "404",
-                    failure_type: "not_found",
+                    expected_status: String(expectedStatus),
+                    failure_type: failureScenario === "404" ? "not_found" : "none",
                 },
             }
         );
 
         check(response, {
-            "NotFound - HTTP 404": (r) =>
-                r.status === 404,
+                "NotFound - expected status": (r) =>
+                r.status === expectedStatus,
         });
 
         console.log(

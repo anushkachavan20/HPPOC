@@ -24,6 +24,7 @@ export const options = {
 };
 
 const BASE_URL = "https://httpbin.org";
+const failureScenario = __ENV.FAIL_SCENARIO || "none";
 
 export default function () {
 
@@ -92,20 +93,20 @@ export default function () {
     group("HTTPBin Service - ServerError", function () {
 
         const response = http.get(
-            `${BASE_URL}/status/500`,
+            `${BASE_URL}/status/${failureScenario === "500" ? "500" : "200"}`,
             {
                 tags: {
                     service: "httpbin",
                     test: "ServerError",
-                    expected_status: "500",
-                    failure_type: "server_error",
+                    expected_status: failureScenario === "500" ? "500" : "200",
+                    failure_type: failureScenario === "500" ? "server_error" : "none",
                 },
             }
         );
 
         check(response, {
-            "ServerError - HTTP 500": (r) =>
-                r.status === 500,
+                "ServerError - expected status": (r) =>
+                r.status === (failureScenario === "500" ? 500 : 200),
         });
 
         console.log(

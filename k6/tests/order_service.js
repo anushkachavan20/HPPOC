@@ -23,6 +23,7 @@ export const options = {
 };
 
 const BASE_URL = "https://reqres.in";
+const failureScenario = __ENV.FAIL_SCENARIO || "none";
 
 export default function () {
 
@@ -91,20 +92,22 @@ export default function () {
     group("ReqRes Service - Unauthorized", function () {
 
         const response = http.get(
-            "https://httpbin.org/status/401",
+            failureScenario === "401"
+                ? "https://httpbin.org/status/401"
+                : `${BASE_URL}/api/users/2`,
             {
                 tags: {
                     service: "reqres",
                     test: "Unauthorized",
-                    expected_status: "401",
-                    failure_type: "unauthorized",
+                    expected_status: failureScenario === "401" ? "401" : "200",
+                    failure_type: failureScenario === "401" ? "unauthorized" : "none",
                 },
             }
         );
 
         check(response, {
-            "Unauthorized - HTTP 401": (r) =>
-                r.status === 401,
+                "Unauthorized - expected status": (r) =>
+                r.status === (failureScenario === "401" ? 401 : 200),
         });
 
         console.log(

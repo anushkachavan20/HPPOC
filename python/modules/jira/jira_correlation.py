@@ -66,10 +66,20 @@ class JiraCorrelation:
         )
 
         # --------------------------------------------------------------
-        # Only failed API tests need Jira correlation.
+        # Passing APIs are checked only when five consecutive successes
+        # qualify them for a Jira resolution recommendation.
         # --------------------------------------------------------------
 
-        if status == "PASS":
+        classification_name = self._extract_classification(
+            classification
+        )
+
+        is_resolved = (
+            status == "PASS"
+            and (classification_name or "").lower() == "resolved failure"
+        )
+
+        if status == "PASS" and not is_resolved:
             logger.debug(
                 "Skipping Jira correlation for passing test: %s/%s",
                 service,
@@ -89,10 +99,6 @@ class JiraCorrelation:
         # --------------------------------------------------------------
         # Extract classification
         # --------------------------------------------------------------
-
-        classification_name = self._extract_classification(
-            classification
-        )
 
         # --------------------------------------------------------------
         # Build JQL
@@ -159,6 +165,17 @@ class JiraCorrelation:
                 classification_name or ""
             ).strip().lower() == "persistent failure"
 
+            if is_resolved:
+                return {
+                    "has_issue": False,
+                    "issue_key": None,
+                    "issue_summary": None,
+                    "issue_url": None,
+                    "jira_action": "NONE",
+                    "jira_recommendation": "No existing Jira issue found to resolve",
+                    "reason": "Five consecutive passes but no matching Jira issue",
+                }
+
             jira_action = "CREATE" if is_persistent else "MONITOR"
 
             if is_persistent:
@@ -212,8 +229,12 @@ class JiraCorrelation:
             "issue_key": issue_key,
             "issue_summary": issue_summary,
             "issue_url": issue_url,
-            "jira_action": "UPDATE",
-            "jira_recommendation": f"Review and update existing Jira issue {issue_key}",
+            "jira_action": "RESOLVE" if is_resolved else "UPDATE",
+            "jira_recommendation": (
+                f"Recommend resolving existing Jira issue {issue_key}"
+                if is_resolved
+                else f"Review and update existing Jira issue {issue_key}"
+            ),
             "reason": (
                 "Matching Jira issue found"
             ),

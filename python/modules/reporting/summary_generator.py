@@ -36,6 +36,69 @@ class SummaryGenerator:
         if not results:
             return "No API test results available."
 
+        return self._generate_clean_report(results)
+
+    def _generate_clean_report(
+        self,
+        results: List[Dict[str, Any]],
+    ) -> str:
+        """Generate the compact tables intended for users and artifacts."""
+        services = {}
+        failed_results = []
+        jira_results = []
+
+        for result in results:
+            service = str(result.get("service", "unknown")).lower()
+            status = str(result.get("status", "UNKNOWN")).upper()
+            services.setdefault(service, {"PASS": 0, "FAIL": 0})[status] = (
+                services.setdefault(service, {"PASS": 0, "FAIL": 0}).get(status, 0) + 1
+            )
+
+            jira = result.get("jira") or {}
+            classification = self._get_classification(result)
+
+            if status == "FAIL":
+                failed_results.append(result)
+                jira_results.append(result)
+            elif classification == "Resolved Failure":
+                jira_results.append(result)
+
+        lines = ["API AUTOMATION HEALTH REPORT", ""]
+        lines.extend([
+            "SERVICE RESULTS",
+            "Service                 Total APIs  Passed  Failed  Result",
+            "----------------------  ----------  ------  ------  ------",
+        ])
+        for service, counts in sorted(services.items()):
+            service_status = "FAIL" if counts.get("FAIL", 0) else "PASS"
+            total_apis = counts.get("PASS", 0) + counts.get("FAIL", 0)
+            lines.append(
+                f"{service:<23} {total_apis:<10}  "
+                f"{counts.get('PASS', 0):<6}  "
+                f"{counts.get('FAIL', 0):<6}  {service_status}"
+            )
+
+        lines.extend(["", "FAILED API RESULTS", "Service                 API / Path                                      Failure Type", "----------------------  ---------------------------------------------  ------------------"])
+        if failed_results:
+            for result in failed_results:
+                api_path = f"{result.get('test', '')} ({result.get('method', '')} {result.get('endpoint', '')})"
+                lines.append(f"{result.get('service', ''):<23} {api_path:<45} {self._get_classification(result)}")
+        else:
+            lines.append("None")
+
+        lines.extend(["", "JIRA ACTIONS", "Service/API             Action     Existing Jira        Recommendation", "----------------------  ---------  -------------------  ------------------------------"])
+        if jira_results:
+            for result in jira_results:
+                jira = result.get("jira") or {}
+                action = jira.get("jira_action", "NONE")
+                issue = jira.get("issue_key") or "None"
+                recommendation = jira.get("jira_recommendation", "")
+                lines.append(f"{result.get('service', '')}/{result.get('test', ''):<20} {action:<10} {issue:<19} {recommendation}")
+        else:
+            lines.append("None")
+
+        return "\n".join(lines)
+
         total = len(results)
 
         passed = sum(

@@ -96,6 +96,8 @@ class DatadogPublisher:
 
         metrics_published = 0
 
+        metrics.extend(self._build_service_summary_metrics(results))
+
         if metrics:
             try:
                 response = self.datadog_client.send_metrics(metrics)
@@ -321,78 +323,104 @@ class DatadogPublisher:
             {
                 "metric": "api_test.analysis_result",
                 "type": "gauge",
-                "points": [
-                    {
-                        "timestamp": timestamp,
-                        "value": 1 if status == "PASS" else 0,
-                    }
-                ],
+                    "points": [[timestamp, 1 if status == "PASS" else 0]],
                 "tags": tags,
             },
             {
                 "metric": "api_test.failure_classification",
                 "type": "gauge",
-                "points": [
-                    {
-                        "timestamp": timestamp,
-                        "value": 1 if status == "FAIL" else 0,
-                    }
-                ],
+                    "points": [[timestamp, 1 if status == "FAIL" else 0]],
                 "tags": tags,
             },
             {
                 "metric": "api_test.historical_failure_rate",
                 "type": "gauge",
-                "points": [
-                    {
-                        "timestamp": timestamp,
-                        "value": historical.get(
-                            "failure_rate",
-                            0,
-                        ),
-                    }
-                ],
+                    "points": [[timestamp, historical.get("failure_rate", 0)]],
                 "tags": tags,
             },
             {
                 "metric": "api_test.execution_count",
                 "type": "count",
-                "points": [{"timestamp": timestamp, "value": 1}],
+                "points": [[timestamp, 1]],
                 "tags": tags,
             },
             {
                 "metric": "api_test.pass_count",
                 "type": "count",
-                "points": [{"timestamp": timestamp, "value": 1 if status == "PASS" else 0}],
+                "points": [[timestamp, 1 if status == "PASS" else 0]],
                 "tags": tags,
             },
             {
                 "metric": "api_test.fail_count",
                 "type": "count",
-                "points": [{"timestamp": timestamp, "value": 1 if status == "FAIL" else 0}],
+                "points": [[timestamp, 1 if status == "FAIL" else 0]],
                 "tags": tags,
             },
             {
                 "metric": "api_test.response_time_ms",
                 "type": "gauge",
-                "points": [{"timestamp": timestamp, "value": result.get("duration_ms", 0)}],
+                "points": [[timestamp, result.get("duration_ms", 0)]],
                 "tags": tags,
             },
             {
                 "metric": "api_test.jira_issue_count",
                 "type": "gauge",
-                "points": [{"timestamp": timestamp, "value": 1 if has_jira else 0}],
+                "points": [[timestamp, 1 if has_jira else 0]],
                 "tags": tags,
             },
             {
                 "metric": "api_test.jira_action_count",
                 "type": "count",
-                "points": [{"timestamp": timestamp, "value": 1}],
+                "points": [[timestamp, 1]],
                 "tags": tags + [f"jira_action:{self._normalize_tag_value(jira_action)}"],
             },
         ]
 
         return metrics
+
+    def _build_service_summary_metrics(
+        self,
+        results: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Build service totals used by the dashboard summary widgets."""
+        timestamp = int(time.time())
+        services = {}
+
+        for result in results:
+            service = result.get("service", "unknown")
+            services.setdefault(service, {"pass": 0, "fail": 0})
+            if str(result.get("status", "")).upper() == "PASS":
+                services[service]["pass"] += 1
+            else:
+                services[service]["fail"] += 1
+
+        total_services = len(services)
+        passed_services = sum(
+            1 for counts in services.values() if counts["fail"] == 0
+        )
+        failed_services = total_services - passed_services
+        base_tags = list(DATADOG_TAGS)
+
+        return [
+            {
+                "metric": "api_test.total_services",
+                "type": "gauge",
+                "points": [[timestamp, total_services]],
+                "tags": base_tags,
+            },
+            {
+                "metric": "api_test.passed_services",
+                "type": "gauge",
+                "points": [[timestamp, passed_services]],
+                "tags": base_tags,
+            },
+            {
+                "metric": "api_test.failed_services",
+                "type": "gauge",
+                "points": [[timestamp, failed_services]],
+                "tags": base_tags,
+            },
+        ]
 
     def _publish_dashboard(self) -> str:
         """Create or update the standard API Automation Health dashboard."""
@@ -404,6 +432,9 @@ class DatadogPublisher:
                 self._query_value_widget("Total APIs", "sum:api_test.execution_count{*}"),
                 self._query_value_widget("Passed APIs", "sum:api_test.pass_count{*}"),
                 self._query_value_widget("Failed APIs", "sum:api_test.fail_count{*}"),
+                self._query_value_widget("Total Services", "avg:api_test.total_services{*}"),
+                self._query_value_widget("Passed Services", "avg:api_test.passed_services{*}"),
+                self._query_value_widget("Failed Services", "avg:api_test.failed_services{*}"),
                 self._query_value_widget("Jira Issues Found", "sum:api_test.jira_issue_count{jira_issue:true}"),
                 self._query_value_widget("Jira Issues To Create", "sum:api_test.jira_action_count{jira_action:create}"),
                 self._query_value_widget("Jira Issues To Update", "sum:api_test.jira_action_count{jira_action:update}"),

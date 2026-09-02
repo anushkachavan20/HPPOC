@@ -1,22 +1,30 @@
-API AUTOMATION HEALTH REPORT
+# API Automation Health Report
 
-SERVICE RESULTS
-Service                 Total APIs  Passed  Failed  Result
-----------------------  ----------  ------  ------  ------
-customer                4           4       0       PASS
-order                   3           1       2       FAIL
-payment                 3           2       1       FAIL
+## Overall Service Summary
+| Measure | Count |
+|---|---:|
+| Total services | 3 |
+| Passing services | 1 |
+| Failing services | 2 |
 
-FAILED API RESULTS
-Service                 API / Path                                      Failure Type
-----------------------  ---------------------------------------------  ------------------
-order                   createorder (POST /orders)                    Flaky Failure
-order                   updateorder (PUT /orders/{id})                Flaky Failure
-payment                 refundpayment (POST /payments/{id}/refund)    Flaky Failure
+## Service Results
+| Service | Total APIs | Passed | Failed | Result |
+|---|---:|---:|---:|---|
+| customer | 4 | 4 | 0 | PASS |
+| order | 3 | 1 | 2 | FAIL |
+| payment | 3 | 2 | 1 | FAIL |
 
-JIRA ACTIONS
-Service/API             Action     Existing Jira        Recommendation
-----------------------  ---------  -------------------  ------------------------------
-order/createorder          MONITOR    None                Monitor order/createorder; create a Jira bug if the failure becomes persistent
-order/updateorder          MONITOR    None                Monitor order/updateorder; create a Jira bug if the failure becomes persistent
-payment/refundpayment        MONITOR    None                Monitor payment/refundpayment; create a Jira bug if the failure becomes persistent
+## Failed API Results
+| Service | API path | Failure type |
+|---|---|---|
+| order | POST /orders | Flaky Failure |
+| order | PUT /orders/{id} | Flaky Failure |
+| payment | POST /payments/{id}/refund | Flaky Failure |
+
+## Jira Actions
+Only failed APIs and APIs eligible for resolution are shown.
+| Service | API | Action | Existing Jira | Recommendation |
+|---|---|---|---|---|
+| order | createorder | MONITOR | None | Monitor order/createorder; create a Jira bug if the failure becomes persistent |
+| order | updateorder | MONITOR | None | Monitor order/updateorder; create a Jira bug if the failure becomes persistent |
+| payment | refundpayment | MONITOR | None | Monitor payment/refundpayment; create a Jira bug if the failure becomes persistent |

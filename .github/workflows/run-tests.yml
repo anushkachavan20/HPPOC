@@ -200,5 +200,4 @@ jobs:
           path: |
             python/**/*.log
             python/*.log
-            python/reports/api_test_analysis.csv
           if-no-files-found: ignore

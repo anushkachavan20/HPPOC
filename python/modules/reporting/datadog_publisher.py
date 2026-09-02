@@ -1,7 +1,5 @@
 import logging
 import time
-import csv
-from pathlib import Path
 from typing import Any, Dict, List
 
 from config import DATADOG_TAGS, DRY_RUN, DATADOG_DASHBOARD_ID
@@ -191,6 +189,16 @@ class DatadogPublisher:
             "",
         )
 
+        jira_action = jira.get(
+            "jira_action",
+            "NONE" if status == "PASS" else "MONITOR",
+        )
+
+        jira_recommendation = jira.get(
+            "jira_recommendation",
+            "",
+        )
+
         jira_summary = jira.get(
             "issue_summary",
             "",
@@ -220,6 +228,7 @@ class DatadogPublisher:
             f"HTTP Status: {http_status}",
             f"Duration: {duration_ms} ms",
             f"Classification: {classification}",
+            f"Jira Action: {jira_action}",
             f"Execution ID: {execution_id}",
             "",
             "Historical Analysis:",
@@ -261,7 +270,8 @@ class DatadogPublisher:
                 [
                     "",
                     "Jira:",
-                    "  No correlated Jira issue found",
+                    f"  Action: {jira_action}",
+                    f"  Recommendation: {jira_recommendation}",
                 ]
             )
 
@@ -302,6 +312,10 @@ class DatadogPublisher:
         tags = self._build_tags(result)
         jira = result.get("jira") or {}
         has_jira = bool(jira.get("has_issue", False))
+        jira_action = jira.get(
+            "jira_action",
+            "NONE" if status == "PASS" else "CREATE",
+        )
 
         metrics = [
             {
@@ -370,6 +384,12 @@ class DatadogPublisher:
                 "points": [{"timestamp": timestamp, "value": 1 if has_jira else 0}],
                 "tags": tags,
             },
+            {
+                "metric": "api_test.jira_action_count",
+                "type": "count",
+                "points": [{"timestamp": timestamp, "value": 1}],
+                "tags": tags + [f"jira_action:{self._normalize_tag_value(jira_action)}"],
+            },
         ]
 
         return metrics
@@ -386,12 +406,25 @@ class DatadogPublisher:
                 self._query_value_widget("Passed APIs", "sum:api_test.pass_count{*}"),
                 self._query_value_widget("Failed APIs", "sum:api_test.fail_count{*}"),
                 self._query_value_widget("Jira Issues Found", "sum:api_test.jira_issue_count{jira_issue:true}"),
+                self._query_value_widget("Jira Issues To Create", "sum:api_test.jira_action_count{jira_action:create}"),
+                self._query_value_widget("Jira Issues To Update", "sum:api_test.jira_action_count{jira_action:update}"),
                 self._timeseries_widget("Service Health", "sum:api_test.analysis_result{*} by {service}"),
                 self._timeseries_widget("HTTP Status Breakdown", "sum:api_test.execution_count{*} by {http_status}"),
                 self._timeseries_widget("Failure Classifications", "sum:api_test.fail_count{*} by {failure_type}"),
                 self._timeseries_widget("API Response Time", "avg:api_test.response_time_ms{*} by {service}"),
-                self._table_widget("Service Health", "avg:api_test.analysis_result{*} by {service}"),
-                self._table_widget("API Test Results", "avg:api_test.analysis_result{*} by {service,test,status,http_status,failure_type}"),
+                self._table_widget(
+                    "Service Health",
+                    "sum:api_test.pass_count{*} by {service}",
+                    "sum:api_test.fail_count{*} by {service}",
+                ),
+                self._table_widget(
+                    "Failed API Classification",
+                    "sum:api_test.fail_count{status:fail} by {service,test,failure_type,http_status}",
+                ),
+                self._table_widget(
+                    "Jira Actions",
+                    "sum:api_test.jira_action_count{jira_action:create OR jira_action:update} by {service,test,jira_action,jira_issue_key}",
+                ),
             ],
         }
 
@@ -408,7 +441,15 @@ class DatadogPublisher:
 
         dashboard_id = self.datadog_client.create_dashboard(dashboard)
         if dashboard_id:
-            logger.info("Created Datadog dashboard: %s", dashboard_id)
+            logger.info(
+                "Created Datadog dashboard: %s",
+                dashboard_id,
+            )
+            logger.info(
+                "Datadog dashboard URL: https://app.%s/dashboard/%s",
+                self.datadog_client.site,
+                dashboard_id,
+            )
         return dashboard_id or ""
 
     @staticmethod
@@ -432,54 +473,33 @@ class DatadogPublisher:
         }
 
     @staticmethod
-    def _table_widget(title: str, query: str) -> Dict[str, Any]:
+    def _table_widget(title: str, *queries: str) -> Dict[str, Any]:
+        requests = [
+            {
+                "queries": [
+                    {
+                        "data_source": "metrics",
+                        "name": f"query{index}",
+                        "query": query,
+                        "aggregator": "sum",
+                    }
+                    for index, query in enumerate(queries, start=1)
+                ],
+                "formulas": [
+                    {"formula": f"query{index}"}
+                    for index in range(1, len(queries) + 1)
+                ],
+                "response_format": "scalar",
+            }
+        ]
+
         return {
             "definition": {
                 "title": title,
-                "type": "table",
-                "requests": [{"q": query, "aggregator": "avg"}],
+                "type": "query_table",
+                "requests": requests,
             },
         }
-
-    @staticmethod
-    def write_csv(results: List[Dict[str, Any]], output_path: str) -> str:
-        """Write one dashboard-friendly row per analyzed API test."""
-        fields = [
-            "execution_id", "service", "test", "method", "endpoint",
-            "status", "http_status", "duration_ms", "failure_type",
-            "historical_pass_rate", "historical_failure_rate",
-            "historical_trend", "jira_issue", "jira_url", "error_message",
-        ]
-
-        path = Path(output_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-
-        with path.open("w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=fields)
-            writer.writeheader()
-            for result in results:
-                historical = result.get("historical") or {}
-                jira = result.get("jira") or {}
-                writer.writerow({
-                    "execution_id": result.get("execution_id", ""),
-                    "service": result.get("service", ""),
-                    "test": result.get("test", ""),
-                    "method": result.get("method", ""),
-                    "endpoint": result.get("endpoint", ""),
-                    "status": result.get("status", ""),
-                    "http_status": result.get("http_status", ""),
-                    "duration_ms": result.get("duration_ms", ""),
-                    "failure_type": DatadogPublisher._get_classification(result),
-                    "historical_pass_rate": historical.get("pass_rate", ""),
-                    "historical_failure_rate": historical.get("failure_rate", ""),
-                    "historical_trend": historical.get("trend", ""),
-                    "jira_issue": jira.get("issue_key", ""),
-                    "jira_url": jira.get("issue_url", ""),
-                    "error_message": result.get("error_message", ""),
-                })
-
-        logger.info("Wrote analysis CSV report: %s", path)
-        return str(path)
 
     def _build_tags(
         self,
@@ -517,6 +537,11 @@ class DatadogPublisher:
             False,
         )
 
+        jira_action = jira.get(
+            "jira_action",
+            "NONE" if status == "pass" else "MONITOR",
+        )
+
         tags = list(DATADOG_TAGS)
 
         tags.extend(
@@ -536,8 +561,12 @@ class DatadogPublisher:
             f"failure_type:{self._normalize_tag_value(classification)}"
         )
         tags.append(
-            "jira_action:found" if has_jira else "jira_action:none"
+            f"jira_action:{self._normalize_tag_value(jira_action)}"
         )
+
+        issue_key = jira.get("issue_key")
+        if issue_key:
+            tags.append(f"jira_issue_key:{self._normalize_tag_value(issue_key)}")
 
         return tags
 

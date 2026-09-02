@@ -91,7 +91,7 @@ export default function () {
     group("ReqRes Service - Unauthorized", function () {
 
         const response = http.get(
-            `${BASE_URL}/api/login`,
+            "https://httpbin.org/status/401",
             {
                 tags: {
                     service: "reqres",

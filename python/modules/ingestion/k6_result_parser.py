@@ -87,6 +87,17 @@ class K6ResultParser:
     # to the endpoint expected by the analysis pipeline.
     ENDPOINT_MAP = {
 
+        # Current public API test files
+        'GetPosts': '/posts',
+        'GetPost': '/posts/1',
+        'NotFound': '/posts/999999999',
+        'GetUsers': '/api/users?page=2',
+        'GetUser': '/api/users/2',
+        'Unauthorized': '/status/401',
+        'Get': '/get',
+        'UUID': '/uuid',
+        'ServerError': '/status/500',
+
         # Customer
         'CreateCustomer': '/customers',
         'GetCustomer': '/customers/{id}',
@@ -435,9 +446,14 @@ class K6ResultParser:
             # Endpoint
             # ------------------------------------------------
 
-            endpoint = self.ENDPOINT_MAP.get(
-                test_name,
-                '/'
+            endpoint = next(
+                (
+                    mapped_endpoint
+                    for mapped_test, mapped_endpoint
+                    in self.ENDPOINT_MAP.items()
+                    if mapped_test.lower() == test_name.lower()
+                ),
+                '/',
             )
 
             # ------------------------------------------------

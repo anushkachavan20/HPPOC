@@ -364,13 +364,6 @@ class APIAnalysisEngine:
                 )
             )
 
-            report_path = Path(__file__).parent / "reports" / "api_test_analysis.csv"
-            DatadogPublisher.write_csv(
-                aggregated_results,
-                str(report_path),
-            )
-            logger.info("CSV analysis report written to %s", report_path)
-
             print("\n")
             print("=" * 80)
             print("API TEST ANALYSIS SUMMARY")

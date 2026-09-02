@@ -119,6 +119,18 @@ class SummaryGenerator:
             len(failed_results) - jira_issues
         )
 
+        jira_create = sum(
+            1
+            for result in failed_results
+            if (result.get("jira") or {}).get("jira_action") == "CREATE"
+        )
+
+        jira_update = sum(
+            1
+            for result in failed_results
+            if (result.get("jira") or {}).get("jira_action") == "UPDATE"
+        )
+
         # --------------------------------------------------------------
         # Build summary
         # --------------------------------------------------------------
@@ -211,6 +223,14 @@ class SummaryGenerator:
         lines.append(
             f" - Failures without Jira issues: "
             f"{jira_without_issue}"
+        )
+
+        lines.append(
+            f" - Jira issues to create: {jira_create}"
+        )
+
+        lines.append(
+            f" - Jira issues to update: {jira_update}"
         )
 
         # --------------------------------------------------------------
@@ -381,6 +401,16 @@ class SummaryGenerator:
             "issue_key"
         )
 
+        jira_action = jira.get(
+            "jira_action",
+            "CREATE",
+        )
+
+        jira_recommendation = jira.get(
+            "jira_recommendation",
+            "",
+        )
+
         lines = []
 
         lines.append(
@@ -414,6 +444,15 @@ class SummaryGenerator:
         lines.append(
             f"   Classification: {classification}"
         )
+
+        lines.append(
+            f"   Jira Action: {jira_action}"
+        )
+
+        if jira_recommendation:
+            lines.append(
+                f"   Jira Recommendation: {jira_recommendation}"
+            )
 
         if error_message:
             lines.append(

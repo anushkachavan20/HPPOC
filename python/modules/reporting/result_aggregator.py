@@ -288,6 +288,14 @@ class ResultAggregator:
                 "issue_key": issue_key,
                 "issue_summary": issue_summary,
                 "issue_url": issue_url,
+                "jira_action": jira.get(
+                    "jira_action",
+                    "NONE" if status == "PASS" else "MONITOR",
+                ),
+                "jira_recommendation": jira.get(
+                    "jira_recommendation",
+                    "",
+                ),
                 "reason": jira.get(
                     "reason"
                 ),

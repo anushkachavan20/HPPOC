@@ -81,6 +81,8 @@ class JiraCorrelation:
                 "issue_key": None,
                 "issue_summary": None,
                 "issue_url": None,
+                "jira_action": "NONE",
+                "jira_recommendation": "No Jira action required",
                 "reason": "Test passed - Jira correlation not required",
             }
 
@@ -137,6 +139,8 @@ class JiraCorrelation:
                 "issue_key": None,
                 "issue_summary": None,
                 "issue_url": None,
+                "jira_action": "SEARCH_FAILED",
+                "jira_recommendation": "Check Jira credentials and search permissions",
                 "reason": f"Jira search failed: {exc}",
             }
 
@@ -151,11 +155,30 @@ class JiraCorrelation:
                 test_name,
             )
 
+            is_persistent = (
+                classification_name or ""
+            ).strip().lower() == "persistent failure"
+
+            jira_action = "CREATE" if is_persistent else "MONITOR"
+
+            if is_persistent:
+                recommendation = (
+                    f"Create a Jira bug for {service}/{test_name} "
+                    f"(HTTP {http_status}, persistent failure)"
+                )
+            else:
+                recommendation = (
+                    f"Monitor {service}/{test_name}; create a Jira bug "
+                    "if the failure becomes persistent"
+                )
+
             return {
                 "has_issue": False,
                 "issue_key": None,
                 "issue_summary": None,
                 "issue_url": None,
+                "jira_action": jira_action,
+                "jira_recommendation": recommendation,
                 "reason": "No matching Jira issue found",
             }
 
@@ -189,6 +212,8 @@ class JiraCorrelation:
             "issue_key": issue_key,
             "issue_summary": issue_summary,
             "issue_url": issue_url,
+            "jira_action": "UPDATE",
+            "jira_recommendation": f"Review and update existing Jira issue {issue_key}",
             "reason": (
                 "Matching Jira issue found"
             ),
@@ -225,21 +250,9 @@ class JiraCorrelation:
             f'summary ~ "{test_value}"',
         ]
 
-        if http_status:
-            clauses.append(
-                f'summary ~ "{http_status}"'
-            )
-
-        if classification:
-            classification_value = (
-                self._escape_jql_value(
-                    classification
-                )
-            )
-
-            clauses.append(
-                f'summary ~ "{classification_value}"'
-            )
+        # HTTP status and classification are recorded in the result and
+        # recommendation, but should not be required in the Jira summary.
+        # Existing issues are commonly titled only with service and test.
 
         project_key = getattr(
             self.jira_client,

@@ -12,6 +12,7 @@ from config import (
     JIRA_API_URL,
     JIRA_API_TOKEN,
     JIRA_EMAIL,
+    JIRA_PROJECT_KEY,
     DRY_RUN,
 )
 
@@ -39,6 +40,7 @@ class JiraClient:
         self.jira_url = jira_url.rstrip("/")
         self.email = email
         self.api_token = api_token
+        self.project_key = JIRA_PROJECT_KEY
         self.logger = logger
 
         self.session = requests.Session()

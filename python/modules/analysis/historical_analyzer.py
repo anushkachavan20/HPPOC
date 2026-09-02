@@ -78,6 +78,12 @@ class HistoricalAnalyzer:
         statuses = []
 
         for event in events:
+            # Analysis events duplicate the ingestion event for the same
+            # execution and must not be treated as another test run.
+            title = str(event.get("title", "")).upper()
+            if "API TEST ANALYSIS:" in title:
+                continue
+
             status = self._extract_status(event)
 
             if status:

@@ -359,8 +359,8 @@ class DatadogPublisher:
                 "tags": tags,
             },
             {
-                "metric": "api_test.fail_count",
-                "type": "count",
+                "metric": "api_test.current_fail_count",
+                "type": "gauge",
                 "points": [[timestamp, 1 if status == "FAIL" else 0]],
                 "tags": tags,
             },
@@ -583,7 +583,7 @@ class DatadogPublisher:
                 ),
                 self._table_widget(
                     "Failed API Classification",
-                    "sum:api_test.fail_count{status:fail} by {service,test,failure_type,http_status}",
+                    "sum:api_test.current_fail_count{status:fail} by {service,test,failure_type,http_status}",
                 ),
                 self._table_widget(
                     "Jira Actions",

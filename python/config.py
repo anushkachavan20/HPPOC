@@ -104,6 +104,13 @@ FAILURE_OCCURRENCE_THRESHOLD = int(
     )
 )
 
+RESOLUTION_SUCCESS_THRESHOLD = int(
+    os.getenv(
+        "RESOLUTION_SUCCESS_THRESHOLD",
+        "3"
+    )
+)
+
 # Dry-run mode
 DRY_RUN = (
     os.getenv(

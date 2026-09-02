@@ -66,7 +66,7 @@ class JiraCorrelation:
         )
 
         # --------------------------------------------------------------
-        # Passing APIs are checked only when five consecutive successes
+        # Passing APIs are checked only after consecutive successes
         # qualify them for a Jira resolution recommendation.
         # --------------------------------------------------------------
 
@@ -173,7 +173,7 @@ class JiraCorrelation:
                     "issue_url": None,
                     "jira_action": "NONE",
                     "jira_recommendation": "No existing Jira issue found to resolve",
-                    "reason": "Five consecutive passes but no matching Jira issue",
+                    "reason": "Required consecutive passes completed but no matching Jira issue",
                 }
 
             jira_action = "CREATE" if is_persistent else "MONITOR"

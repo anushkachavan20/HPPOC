@@ -370,6 +370,10 @@ class DatadogClient:
         execution_ids = set()
 
         for event in events:
+            title = str(event.get("title", "")).upper()
+            if "API TEST ANALYSIS:" in title:
+                continue
+
             event_execution_id = None
             for tag in event.get("tags", []):
                 if isinstance(tag, str) and tag.startswith("execution_id:"):

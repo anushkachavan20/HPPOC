@@ -14,6 +14,7 @@ from config import (
     FAILURE_PERSISTENT_THRESHOLD,
     FAILURE_FLAKY_MIN_ALTERNATIONS,
     FAILURE_OCCURRENCE_THRESHOLD,
+    RESOLUTION_SUCCESS_THRESHOLD,
 )
 
 
@@ -82,12 +83,15 @@ class FailureClassifier:
         if current_status == "PASS":
             recent_statuses = ["PASS"] + statuses
 
-            # A resolution requires five consecutive successful runs,
+            # A resolution requires consecutive successful runs,
             # including the current run, after a previous failure.
             if (
                 failed > 0
-                and len(recent_statuses) >= 5
-                and all(status == "PASS" for status in recent_statuses[:5])
+                and len(recent_statuses) >= RESOLUTION_SUCCESS_THRESHOLD
+                and all(
+                    status == "PASS"
+                    for status in recent_statuses[:RESOLUTION_SUCCESS_THRESHOLD]
+                )
             ):
                 return "Resolved Failure"
 

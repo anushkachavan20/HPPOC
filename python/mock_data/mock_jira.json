@@ -1,0 +1,44 @@
+[
+  {
+    "jira_id": "PROJ-101",
+    "service": "Customer",
+    "test": "CreateCustomer",
+    "failure_category": "Database",
+    "summary": "Customer API database connection timeout",
+    "description": "Intermittent database connection timeouts when creating customers during peak load",
+    "status": "In Progress",
+    "assignee": "dev-team@example.com",
+    "priority": "High",
+    "url": "https://jira.example.com/browse/PROJ-101",
+    "created_date": "2026-08-25",
+    "last_updated": "2026-08-31"
+  },
+  {
+    "jira_id": "PROJ-102",
+    "service": "Order",
+    "test": "CreateOrder",
+    "failure_category": "Timeout",
+    "summary": "Order creation timeout - inventory service latency",
+    "description": "Order creation times out when inventory service responds slowly",
+    "status": "Backlog",
+    "assignee": "backend-team@example.com",
+    "priority": "Medium",
+    "url": "https://jira.example.com/browse/PROJ-102",
+    "created_date": "2026-08-22",
+    "last_updated": "2026-08-28"
+  },
+  {
+    "jira_id": "PROJ-103",
+    "service": "Payment",
+    "test": "CreatePayment",
+    "failure_category": "Authentication",
+    "summary": "Payment gateway authentication token expiry",
+    "description": "Payment API fails when token expires mid-transaction",
+    "status": "Done",
+    "assignee": "payments-team@example.com",
+    "priority": "Critical",
+    "url": "https://jira.example.com/browse/PROJ-103",
+    "created_date": "2026-07-15",
+    "last_updated": "2026-08-30"
+  }
+]

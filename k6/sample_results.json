@@ -1,0 +1,131 @@
+{
+  "k6_meta": {
+    "execution_id": "sample_run_001",
+    "scenario": "api_tests",
+    "duration": "20s",
+    "vus": 2,
+    "timestamp": "2026-09-01T10:30:00Z"
+  },
+  "results": [
+    {
+      "service": "Customer",
+      "test_name": "CreateCustomer",
+      "method": "POST",
+      "endpoint": "/customers",
+      "status": "PASS",
+      "http_status": 201,
+      "duration_ms": 125,
+      "error": null,
+      "response_body": "{\"id\": \"123\", \"name\": \"Test Customer\"}",
+      "timestamp": "2026-09-01T10:30:01Z"
+    },
+    {
+      "service": "Customer",
+      "test_name": "GetCustomer",
+      "method": "GET",
+      "endpoint": "/customers/{id}",
+      "status": "PASS",
+      "http_status": 200,
+      "duration_ms": 95,
+      "error": null,
+      "response_body": "{\"id\": \"123\", \"name\": \"Test Customer\"}",
+      "timestamp": "2026-09-01T10:30:02Z"
+    },
+    {
+      "service": "Customer",
+      "test_name": "UpdateCustomer",
+      "method": "PUT",
+      "endpoint": "/customers/{id}",
+      "status": "PASS",
+      "http_status": 200,
+      "duration_ms": 110,
+      "error": null,
+      "response_body": "{\"id\": \"123\", \"name\": \"Updated Customer\"}",
+      "timestamp": "2026-09-01T10:30:03Z"
+    },
+    {
+      "service": "Customer",
+      "test_name": "DeleteCustomer",
+      "method": "DELETE",
+      "endpoint": "/customers/{id}",
+      "status": "PASS",
+      "http_status": 204,
+      "duration_ms": 80,
+      "error": null,
+      "response_body": "",
+      "timestamp": "2026-09-01T10:30:04Z"
+    },
+    {
+      "service": "Order",
+      "test_name": "CreateOrder",
+      "method": "POST",
+      "endpoint": "/orders",
+      "status": "FAIL",
+      "http_status": 500,
+      "duration_ms": 2500,
+      "error": "Internal Server Error - Database connection timeout",
+      "response_body": "{\"error\": \"Database connection pool exhausted\"}",
+      "timestamp": "2026-09-01T10:30:05Z"
+    },
+    {
+      "service": "Order",
+      "test_name": "GetOrder",
+      "method": "GET",
+      "endpoint": "/orders/{id}",
+      "status": "PASS",
+      "http_status": 200,
+      "duration_ms": 150,
+      "error": null,
+      "response_body": "{\"id\": \"456\", \"customer_id\": \"123\", \"total\": 99.99}",
+      "timestamp": "2026-09-01T10:30:06Z"
+    },
+    {
+      "service": "Order",
+      "test_name": "UpdateOrder",
+      "method": "PUT",
+      "endpoint": "/orders/{id}",
+      "status": "FAIL",
+      "http_status": 504,
+      "duration_ms": 30000,
+      "error": "Gateway Timeout - Request timed out after 30s",
+      "response_body": "{\"error\": \"Timeout waiting for inventory service\"}",
+      "timestamp": "2026-09-01T10:30:35Z"
+    },
+    {
+      "service": "Payment",
+      "test_name": "CreatePayment",
+      "method": "POST",
+      "endpoint": "/payments",
+      "status": "PASS",
+      "http_status": 200,
+      "duration_ms": 800,
+      "error": null,
+      "response_body": "{\"transaction_id\": \"TXN_789\", \"status\": \"SUCCESS\"}",
+      "timestamp": "2026-09-01T10:31:05Z"
+    },
+    {
+      "service": "Payment",
+      "test_name": "GetPayment",
+      "method": "GET",
+      "endpoint": "/payments/{id}",
+      "status": "PASS",
+      "http_status": 200,
+      "duration_ms": 120,
+      "error": null,
+      "response_body": "{\"transaction_id\": \"TXN_789\", \"status\": \"SUCCESS\"}",
+      "timestamp": "2026-09-01T10:31:06Z"
+    },
+    {
+      "service": "Payment",
+      "test_name": "RefundPayment",
+      "method": "POST",
+      "endpoint": "/payments/{id}/refund",
+      "status": "FAIL",
+      "http_status": 401,
+      "duration_ms": 150,
+      "error": "Unauthorized - Invalid authentication token",
+      "response_body": "{\"error\": \"Authentication token expired\"}",
+      "timestamp": "2026-09-01T10:31:07Z"
+    }
+  ]
+}

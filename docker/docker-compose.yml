@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: api_test_analysis_ollama
+    
+    # Make Ollama accessible from host and Python container
+    ports:
+      - "11434:11434"
+    
+    # Volume for model persistence
+    volumes:
+      - ollama_data:/root/.ollama
+    
+    # Keep container running
+    stdin_open: true
+    tty: true
+    
+    # Resource limits (adjust as needed)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+
+volumes:
+  ollama_data:
+    driver: local

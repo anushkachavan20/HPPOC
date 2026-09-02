@@ -11,7 +11,7 @@ from logger import get_logger
 logger = get_logger("jira.correlation")
 
 
-class JiraCorrelator:
+class JiraCorrelation:
     """
     Correlates failed API test results with existing Jira issues.
     """

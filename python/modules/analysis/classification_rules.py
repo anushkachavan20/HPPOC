@@ -13,6 +13,7 @@ Classification types:
 from config import (
     FAILURE_PERSISTENT_THRESHOLD,
     FAILURE_FLAKY_MIN_ALTERNATIONS,
+    FAILURE_OCCURRENCE_THRESHOLD,
 )
 
 
@@ -101,7 +102,10 @@ class FailureClassifier:
             # ------------------------------------------------
             # Persistent failure
             # ------------------------------------------------
-            if failure_rate >= self.persistent_threshold:
+            if (
+                failure_rate >= self.persistent_threshold
+                or failed >= FAILURE_OCCURRENCE_THRESHOLD
+            ):
                 return "Persistent Failure"
 
             # ------------------------------------------------

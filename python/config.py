@@ -97,6 +97,13 @@ FAILURE_FLAKY_MIN_ALTERNATIONS = int(
     )
 )
 
+FAILURE_OCCURRENCE_THRESHOLD = int(
+    os.getenv(
+        "FAILURE_OCCURRENCE_THRESHOLD",
+        "6"
+    )
+)
+
 # Dry-run mode
 DRY_RUN = (
     os.getenv(

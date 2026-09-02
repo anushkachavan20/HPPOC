@@ -74,43 +74,64 @@ class SummaryGenerator:
         failed_services = total_services - passed_services
 
         lines = [
-            "# API Automation Health Report",
+            "=" * 86,
+            "                     API AUTOMATION HEALTH REPORT",
+            "=" * 86,
             "",
-            "## Overall Service Summary",
-            "| Measure | Count |",
-            "|---|---:|",
-            f"| Total services | {total_services} |",
-            f"| Passing services | {passed_services} |",
-            f"| Failing services | {failed_services} |",
+            "OVERALL SERVICE SUMMARY",
+            "------------------------",
+            f"Total services : {total_services}",
+            f"Passing services: {passed_services}",
+            f"Failing services: {failed_services}",
             "",
-            "## Service Results",
-            "| Service | Total APIs | Passed | Failed | Result |",
-            "|---|---:|---:|---:|---|",
+            "SERVICE RESULTS",
+            "+----------------------+------------+--------+--------+--------+",
+            "| Service              | Total APIs | Passed | Failed | Result |",
+            "+----------------------+------------+--------+--------+--------+",
         ]
         for service, counts in sorted(services.items()):
             service_status = "FAIL" if counts.get("FAIL", 0) else "PASS"
             total_apis = counts.get("PASS", 0) + counts.get("FAIL", 0)
-            lines.append(f"| {service} | {total_apis} | {counts.get('PASS', 0)} | {counts.get('FAIL', 0)} | {service_status} |")
+            lines.append(
+                f"| {service:<20} | {total_apis:>10} | "
+                f"{counts.get('PASS', 0):>6} | "
+                f"{counts.get('FAIL', 0):>6} | "
+                f"{service_status:<6} |"
+            )
+
+        lines.append(
+            "+----------------------+------------+--------+--------+--------+"
+        )
 
         lines.extend([
             "",
-            "## Failed API Results",
-            "| Service | API path | Failure type |",
-            "|---|---|---|",
+            "FAILED API RESULTS",
+            "+----------------------+--------------------------------------+--------------------+",
+            "| Service              | API path                             | Failure type       |",
+            "+----------------------+--------------------------------------+--------------------+",
         ])
         if failed_results:
             for result in failed_results:
                 api_path = f"{result.get('method', '')} {result.get('endpoint', '')}"
-                lines.append(f"| {result.get('service', '')} | {api_path} | {self._get_classification(result)} |")
+                lines.append(
+                    f"| {result.get('service', ''):<20} | "
+                    f"{api_path:<36} | "
+                    f"{self._get_classification(result):<18} |"
+                )
         else:
-            lines.append("| None |  |  |")
+            lines.append("| None                 |                                    |                    |")
+
+        lines.append(
+            "+----------------------+--------------------------------------+--------------------+"
+        )
 
         lines.extend([
             "",
-            "## Jira Actions",
+            "JIRA ACTIONS",
             "Only failed APIs and APIs eligible for resolution are shown.",
-            "| Service | API | Action | Existing Jira | Recommendation |",
-            "|---|---|---|---|---|",
+            "+----------------------+----------+-------------------+",
+            "| Service/API          | Action   | Existing Jira     |",
+            "+----------------------+----------+-------------------+",
         ])
         if jira_results:
             for result in jira_results:
@@ -118,9 +139,20 @@ class SummaryGenerator:
                 action = jira.get("jira_action", "NONE")
                 issue = jira.get("issue_key") or "None"
                 recommendation = jira.get("jira_recommendation", "")
-                lines.append(f"| {result.get('service', '')} | {result.get('test', '')} | {action} | {issue} | {recommendation} |")
+                api_name = f"{result.get('service', '')}/{result.get('test', '')}"
+                lines.append(
+                    f"| {api_name:<20} | {action:<8} | "
+                    f"{issue:<17} |"
+                )
+                lines.append(f"  Recommendation: {recommendation}")
         else:
-            lines.append("| None |  |  |  | No Jira action required |")
+            lines.append(
+                "| None                 |          |                   |"
+            )
+
+        lines.append(
+            "+----------------------+----------+-------------------+"
+        )
 
         return "\n".join(lines)
 

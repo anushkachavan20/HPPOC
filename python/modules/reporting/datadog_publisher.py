@@ -2,7 +2,12 @@ import logging
 import time
 from typing import Any, Dict, List
 
-from config import DATADOG_TAGS, DRY_RUN, DATADOG_DASHBOARD_ID
+from config import (
+    DATADOG_TAGS,
+    DRY_RUN,
+    DATADOG_DASHBOARD_ID,
+    FAILURE_OCCURRENCE_THRESHOLD,
+)
 from modules.datadog.datadog_client import DatadogClient
 
 logger = logging.getLogger(__name__)
@@ -374,6 +379,14 @@ class DatadogPublisher:
                 "points": [[timestamp, 1]],
                 "tags": tags + [f"jira_action:{self._normalize_tag_value(jira_action)}"],
             },
+            {
+                "metric": "api_test.failure_occurrence_count",
+                "type": "count",
+                "points": [[timestamp, 1 if status == "FAIL" else 0]],
+                "tags": tags + [
+                    f"failure_threshold:{FAILURE_OCCURRENCE_THRESHOLD}"
+                ],
+            },
         ]
 
         return metrics
@@ -432,16 +445,17 @@ class DatadogPublisher:
                 self._query_value_widget("Total APIs", "sum:api_test.execution_count{*}"),
                 self._query_value_widget("Passed APIs", "sum:api_test.pass_count{*}"),
                 self._query_value_widget("Failed APIs", "sum:api_test.fail_count{*}"),
+                self._query_value_widget("Failure Occurrences", "sum:api_test.failure_occurrence_count{status:fail}"),
                 self._query_value_widget("Total Services", "avg:api_test.total_services{*}"),
                 self._query_value_widget("Passed Services", "avg:api_test.passed_services{*}"),
                 self._query_value_widget("Failed Services", "avg:api_test.failed_services{*}"),
                 self._query_value_widget("Jira Issues Found", "sum:api_test.jira_issue_count{jira_issue:true}"),
                 self._query_value_widget("Jira Issues To Create", "sum:api_test.jira_action_count{jira_action:create}"),
                 self._query_value_widget("Jira Issues To Update", "sum:api_test.jira_action_count{jira_action:update}"),
-                self._timeseries_widget("Service Health", "sum:api_test.analysis_result{*} by {service}"),
+                self._timeseries_widget("Service Health", "avg:api_test.result{*} by {service}"),
                 self._timeseries_widget("HTTP Status Breakdown", "sum:api_test.execution_count{*} by {http_status}"),
-                self._timeseries_widget("Failure Classifications", "sum:api_test.fail_count{*} by {failure_type}"),
-                self._timeseries_widget("API Response Time", "avg:api_test.response_time_ms{*} by {service}"),
+                self._timeseries_widget("Failure Classifications", "sum:api_test.failure_occurrence_count{status:fail} by {failure_type}"),
+                self._timeseries_widget("API Response Time", "avg:api_test.duration_ms{*} by {service}"),
                 self._table_widget(
                     "Service Health",
                     "sum:api_test.pass_count{*} by {service}",

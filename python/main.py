@@ -364,6 +364,14 @@ class APIAnalysisEngine:
                 )
             )
 
+            report_path = Path(__file__).parent / "reports" / "analysis_report.txt"
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text(
+                self._build_full_report(summary, aggregated_results),
+                encoding="utf-8",
+            )
+            logger.info("Full analysis report written to %s", report_path)
+
             print("\n")
             print("=" * 80)
             print("API TEST ANALYSIS SUMMARY")
@@ -417,6 +425,39 @@ class APIAnalysisEngine:
             )
             return False
 
+    @staticmethod
+    def _build_full_report(summary, results):
+        """Build the complete text report uploaded by GitHub Actions."""
+        lines = [summary, "", "ALL API TEST RESULTS", "=" * 80]
+
+        for result in results:
+            historical = result.get("historical") or {}
+            jira = result.get("jira") or {}
+            classification = result.get("classification") or {}
+            if isinstance(classification, dict):
+                classification = classification.get(
+                    "pattern",
+                    classification.get("classification", "Unknown"),
+                )
+
+            lines.extend([
+                f"Service: {result.get('service', '')}",
+                f"API/Test: {result.get('test', '')}",
+                f"Request: {result.get('method', '')} {result.get('endpoint', '')}",
+                f"Status: {result.get('status', '')}",
+                f"HTTP Status: {result.get('http_status', '')}",
+                f"Duration: {result.get('duration_ms', '')} ms",
+                f"Failure Type: {classification}",
+                f"Historical Pass Rate: {historical.get('pass_rate', '')}",
+                f"Historical Failure Rate: {historical.get('failure_rate', '')}",
+                f"Jira Action: {jira.get('jira_action', 'NONE')}",
+                f"Jira Issue: {jira.get('issue_key') or 'None'}",
+                f"Jira Recommendation: {jira.get('jira_recommendation', '')}",
+                f"Error: {result.get('error_message') or 'None'}",
+                "-" * 80,
+            ])
+
+        return "\n".join(lines) + "\n"
 
 # ----------------------------------------------------------------------
 # Command Line Interface

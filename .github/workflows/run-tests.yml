@@ -200,4 +200,5 @@ jobs:
           path: |
             python/**/*.log
             python/*.log
+            python/reports/analysis_report.txt
           if-no-files-found: ignore

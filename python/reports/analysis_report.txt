@@ -1,0 +1,190 @@
+API TEST ANALYSIS SUMMARY
+--------------------------------------------------
+Total Tests Executed: 10
+Passed: 7 (70.0%)
+Failed: 3 (30.0%)
+
+Failure Breakdown:
+ - Flaky Failure: 3
+ - Resolved Failure: 7
+
+Affected Services:
+ - order: 2 failures
+ - payment: 1 failure
+
+Jira Coverage:
+ - Failures with Jira issues: 0
+ - Failures without Jira issues: 3
+ - Jira issues to create: 0
+ - Jira issues to update: 0
+
+Failure Details:
+ - order/createorder
+   Request: POST /orders
+   HTTP Status: 500
+   Duration: 2500.00 ms
+   Classification: Flaky Failure
+   Jira Action: MONITOR
+   Jira Recommendation: Monitor order/createorder; create a Jira bug if the failure becomes persistent
+   Error: Internal Server Error - Database connection timeout
+ - order/updateorder
+   Request: PUT /orders/{id}
+   HTTP Status: 504
+   Duration: 30000.00 ms
+   Classification: Flaky Failure
+   Jira Action: MONITOR
+   Jira Recommendation: Monitor order/updateorder; create a Jira bug if the failure becomes persistent
+   Error: Gateway Timeout - Request timed out after 30s
+ - payment/refundpayment
+   Request: POST /payments/{id}/refund
+   HTTP Status: 401
+   Duration: 150.00 ms
+   Classification: Flaky Failure
+   Jira Action: MONITOR
+   Jira Recommendation: Monitor payment/refundpayment; create a Jira bug if the failure becomes persistent
+   Error: Unauthorized - Invalid authentication token
+
+Overall Status: FAILED
+
+ALL API TEST RESULTS
+================================================================================
+Service: customer
+API/Test: createcustomer
+Request: POST /customers
+Status: PASS
+HTTP Status: 201
+Duration: 125.0 ms
+Failure Type: Resolved Failure
+Historical Pass Rate: 0.6
+Historical Failure Rate: 0.4
+Jira Action: NONE
+Jira Issue: None
+Jira Recommendation: No Jira action required
+Error: None
+--------------------------------------------------------------------------------
+Service: customer
+API/Test: getcustomer
+Request: GET /customers/{id}
+Status: PASS
+HTTP Status: 200
+Duration: 95.0 ms
+Failure Type: Resolved Failure
+Historical Pass Rate: 0.6
+Historical Failure Rate: 0.4
+Jira Action: NONE
+Jira Issue: None
+Jira Recommendation: No Jira action required
+Error: None
+--------------------------------------------------------------------------------
+Service: customer
+API/Test: updatecustomer
+Request: PUT /customers/{id}
+Status: PASS
+HTTP Status: 200
+Duration: 110.0 ms
+Failure Type: Resolved Failure
+Historical Pass Rate: 0.6
+Historical Failure Rate: 0.4
+Jira Action: NONE
+Jira Issue: None
+Jira Recommendation: No Jira action required
+Error: None
+--------------------------------------------------------------------------------
+Service: customer
+API/Test: deletecustomer
+Request: DELETE /customers/{id}
+Status: PASS
+HTTP Status: 204
+Duration: 80.0 ms
+Failure Type: Resolved Failure
+Historical Pass Rate: 0.6
+Historical Failure Rate: 0.4
+Jira Action: NONE
+Jira Issue: None
+Jira Recommendation: No Jira action required
+Error: None
+--------------------------------------------------------------------------------
+Service: order
+API/Test: createorder
+Request: POST /orders
+Status: FAIL
+HTTP Status: 500
+Duration: 2500.0 ms
+Failure Type: Flaky Failure
+Historical Pass Rate: 0.6
+Historical Failure Rate: 0.4
+Jira Action: MONITOR
+Jira Issue: None
+Jira Recommendation: Monitor order/createorder; create a Jira bug if the failure becomes persistent
+Error: Internal Server Error - Database connection timeout
+--------------------------------------------------------------------------------
+Service: order
+API/Test: getorder
+Request: GET /orders/{id}
+Status: PASS
+HTTP Status: 200
+Duration: 150.0 ms
+Failure Type: Resolved Failure
+Historical Pass Rate: 0.6
+Historical Failure Rate: 0.4
+Jira Action: NONE
+Jira Issue: None
+Jira Recommendation: No Jira action required
+Error: None
+--------------------------------------------------------------------------------
+Service: order
+API/Test: updateorder
+Request: PUT /orders/{id}
+Status: FAIL
+HTTP Status: 504
+Duration: 30000.0 ms
+Failure Type: Flaky Failure
+Historical Pass Rate: 0.6
+Historical Failure Rate: 0.4
+Jira Action: MONITOR
+Jira Issue: None
+Jira Recommendation: Monitor order/updateorder; create a Jira bug if the failure becomes persistent
+Error: Gateway Timeout - Request timed out after 30s
+--------------------------------------------------------------------------------
+Service: payment
+API/Test: createpayment
+Request: POST /payments
+Status: PASS
+HTTP Status: 200
+Duration: 800.0 ms
+Failure Type: Resolved Failure
+Historical Pass Rate: 0.6
+Historical Failure Rate: 0.4
+Jira Action: NONE
+Jira Issue: None
+Jira Recommendation: No Jira action required
+Error: None
+--------------------------------------------------------------------------------
+Service: payment
+API/Test: getpayment
+Request: GET /payments/{id}
+Status: PASS
+HTTP Status: 200
+Duration: 120.0 ms
+Failure Type: Resolved Failure
+Historical Pass Rate: 0.6
+Historical Failure Rate: 0.4
+Jira Action: NONE
+Jira Issue: None
+Jira Recommendation: No Jira action required
+Error: None
+--------------------------------------------------------------------------------
+Service: payment
+API/Test: refundpayment
+Request: POST /payments/{id}/refund
+Status: FAIL
+HTTP Status: 401
+Duration: 150.0 ms
+Failure Type: Flaky Failure
+Historical Pass Rate: 0.6
+Historical Failure Rate: 0.4
+Jira Action: MONITOR
+Jira Issue: None
+Jira Recommendation: Monitor payment/refundpayment; create a Jira bug if the failure becomes persistent
+Error: Unauthorized - Invalid authentication token
+--------------------------------------------------------------------------------

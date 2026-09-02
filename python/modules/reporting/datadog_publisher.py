@@ -102,6 +102,7 @@ class DatadogPublisher:
         metrics_published = 0
 
         metrics.extend(self._build_service_summary_metrics(results))
+        metrics.extend(self._build_run_summary_metrics(results))
 
         if metrics:
             try:
@@ -435,6 +436,46 @@ class DatadogPublisher:
             },
         ]
 
+    def _build_run_summary_metrics(
+        self,
+        results: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Build latest-run totals so dashboard cards do not sum history."""
+        timestamp = int(time.time())
+        total_apis = len(results)
+        passed_apis = sum(
+            1 for result in results
+            if str(result.get("status", "")).upper() == "PASS"
+        )
+        failed_apis = total_apis - passed_apis
+
+        return [
+            {
+                "metric": "api_test.run_total_apis",
+                "type": "gauge",
+                "points": [[timestamp, total_apis]],
+                "tags": list(DATADOG_TAGS),
+            },
+            {
+                "metric": "api_test.run_passed_apis",
+                "type": "gauge",
+                "points": [[timestamp, passed_apis]],
+                "tags": list(DATADOG_TAGS),
+            },
+            {
+                "metric": "api_test.run_failed_apis",
+                "type": "gauge",
+                "points": [[timestamp, failed_apis]],
+                "tags": list(DATADOG_TAGS),
+            },
+            {
+                "metric": "api_test.run_failure_occurrences",
+                "type": "gauge",
+                "points": [[timestamp, failed_apis]],
+                "tags": list(DATADOG_TAGS),
+            },
+        ]
+
     def _publish_dashboard(self) -> str:
         """Create or update the standard API Automation Health dashboard."""
         dashboard = {
@@ -442,20 +483,20 @@ class DatadogPublisher:
             "description": "API test health, deterministic failure classifications, and Jira coverage.",
             "layout_type": "ordered",
             "widgets": [
-                self._query_value_widget("Total APIs", "sum:api_test.execution_count{*}"),
-                self._query_value_widget("Passed APIs", "sum:api_test.pass_count{*}"),
-                self._query_value_widget("Failed APIs", "sum:api_test.fail_count{*}"),
-                self._query_value_widget("Failure Occurrences", "sum:api_test.failure_occurrence_count{status:fail}"),
+                self._query_value_widget("Total APIs", "avg:api_test.run_total_apis{*}", aggregator="last"),
+                self._query_value_widget("Passed APIs", "avg:api_test.run_passed_apis{*}", aggregator="last"),
+                self._query_value_widget("Failed APIs", "avg:api_test.run_failed_apis{*}", aggregator="last"),
+                self._query_value_widget("Failure Occurrences", "avg:api_test.run_failure_occurrences{*}", aggregator="last"),
                 self._query_value_widget("Total Services", "avg:api_test.total_services{*}"),
                 self._query_value_widget("Passed Services", "avg:api_test.passed_services{*}"),
                 self._query_value_widget("Failed Services", "avg:api_test.failed_services{*}"),
                 self._query_value_widget("Jira Issues Found", "sum:api_test.jira_issue_count{jira_issue:true}"),
                 self._query_value_widget("Jira Issues To Create", "sum:api_test.jira_action_count{jira_action:create}"),
                 self._query_value_widget("Jira Issues To Update", "sum:api_test.jira_action_count{jira_action:update}"),
-                self._timeseries_widget("Service Health", "avg:api_test.result{*} by {service}"),
+                self._timeseries_widget("Service Health", "avg:api_test.analysis_result{*} by {service}"),
                 self._timeseries_widget("HTTP Status Breakdown", "sum:api_test.execution_count{*} by {http_status}"),
                 self._timeseries_widget("Failure Classifications", "sum:api_test.failure_occurrence_count{status:fail} by {failure_type}"),
-                self._timeseries_widget("API Response Time", "avg:api_test.duration_ms{*} by {service}"),
+                self._timeseries_widget("API Response Time", "avg:api_test.response_time_ms{*} by {service}"),
                 self._table_widget(
                     "Service Health",
                     "sum:api_test.pass_count{*} by {service}",
@@ -512,12 +553,16 @@ class DatadogPublisher:
         return dashboard_id or ""
 
     @staticmethod
-    def _query_value_widget(title: str, query: str) -> Dict[str, Any]:
+    def _query_value_widget(
+        title: str,
+        query: str,
+        aggregator: str = "sum",
+    ) -> Dict[str, Any]:
         return {
             "definition": {
                 "title": title,
                 "type": "query_value",
-                "requests": [{"q": query, "aggregator": "sum"}],
+                "requests": [{"q": query, "aggregator": aggregator}],
             },
         }
 

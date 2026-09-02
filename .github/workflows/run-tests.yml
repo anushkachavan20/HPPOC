@@ -2,17 +2,30 @@ name: API Test Analysis POC
 
 on:
   workflow_dispatch:
+    inputs:
+      failure_scenario:
+        description: "Select the API failure scenario to test"
+        required: true
+        default: "500"
+        type: choice
+        options:
+          - none
+          - 401
+          - 404
+          - 500
 
 jobs:
   api-test-analysis:
     runs-on: ubuntu-latest
 
     steps:
+
       # ---------------------------------------------------------
       # 1. Checkout repository
       # ---------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v6
+
 
       # ---------------------------------------------------------
       # 2. Setup Python
@@ -22,11 +35,13 @@ jobs:
         with:
           python-version: "3.11"
 
+
       # ---------------------------------------------------------
       # 3. Setup k6
       # ---------------------------------------------------------
       - name: Setup k6
         uses: grafana/setup-k6-action@v1
+
 
       # ---------------------------------------------------------
       # 4. Install Python dependencies
@@ -37,18 +52,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+
       # ---------------------------------------------------------
       # 5. Run Customer API tests
       # ---------------------------------------------------------
       - name: Run Customer API tests
         working-directory: k6
         continue-on-error: true
+        env:
+          FAIL_SCENARIO: ${{ github.event.inputs.failure_scenario }}
         run: |
           echo "Running Customer Service tests..."
+          echo "Failure scenario: ${FAIL_SCENARIO}"
 
           k6 run \
             tests/customer_service.js \
             --out json=customer_results.json
+
 
       # ---------------------------------------------------------
       # 6. Run Order API tests
@@ -56,12 +76,16 @@ jobs:
       - name: Run Order API tests
         working-directory: k6
         continue-on-error: true
+        env:
+          FAIL_SCENARIO: ${{ github.event.inputs.failure_scenario }}
         run: |
           echo "Running Order Service tests..."
+          echo "Failure scenario: ${FAIL_SCENARIO}"
 
           k6 run \
             tests/order_service.js \
             --out json=order_results.json
+
 
       # ---------------------------------------------------------
       # 7. Run Payment API tests
@@ -69,12 +93,16 @@ jobs:
       - name: Run Payment API tests
         working-directory: k6
         continue-on-error: true
+        env:
+          FAIL_SCENARIO: ${{ github.event.inputs.failure_scenario }}
         run: |
           echo "Running Payment Service tests..."
+          echo "Failure scenario: ${FAIL_SCENARIO}"
 
           k6 run \
             tests/payment_service.js \
             --out json=payment_results.json
+
 
       # ---------------------------------------------------------
       # 8. Combine native k6 JSON output
@@ -105,12 +133,14 @@ jobs:
 
           echo ""
           echo "Combined results:"
+
           if [ -s results.json ]; then
             wc -l results.json
           else
             echo "ERROR: results.json is empty"
             exit 1
           fi
+
 
       # ---------------------------------------------------------
       # 9. Run Python analysis
@@ -122,9 +152,10 @@ jobs:
           DATADOG_APP_KEY: ${{ secrets.DATADOG_APP_KEY }}
           DATADOG_SITE: ${{ secrets.DATADOG_SITE }}
 
-          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_API_URL: ${{ secrets.JIRA_API_URL }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
 
           DRY_RUN: ${{ secrets.DRY_RUN }}
 
@@ -139,6 +170,7 @@ jobs:
           python main.py \
             --k6-result ../k6/results.json \
             --execution-id "gh_run_${{ github.run_id }}"
+
 
       # ---------------------------------------------------------
       # 10. Upload k6 results
@@ -155,8 +187,9 @@ jobs:
             k6/results.json
           if-no-files-found: warn
 
+
       # ---------------------------------------------------------
-      # 11. Upload analysis logs if available
+      # 11. Upload analysis logs
       # ---------------------------------------------------------
       - name: Upload analysis logs
         if: always()

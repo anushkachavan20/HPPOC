@@ -71,12 +71,12 @@ jobs:
         env:
           DATADOG_API_KEY: ${{ secrets.DATADOG_API_KEY }}
           DATADOG_APP_KEY: ${{ secrets.DATADOG_APP_KEY }}
-          DATADOG_SITE: ${{ vars.DATADOG_SITE }}
-          JIRA_API_URL: ${{ vars.JIRA_API_URL }}
+          DATADOG_SITE: ${{ secrets.DATADOG_SITE }}
+          JIRA_API_URL: ${{ secrets.JIRA_API_URL }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
-          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
-          DRY_RUN: ${{ vars.DRY_RUN }}
+          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+          DRY_RUN: ${{ secrets.DRY_RUN }}
           LOG_LEVEL: INFO
 
         run: |

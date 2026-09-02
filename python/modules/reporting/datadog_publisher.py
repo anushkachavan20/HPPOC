@@ -323,6 +323,9 @@ class DatadogPublisher:
         current_tags = [
             tag for tag in tags
             if not tag.startswith("execution_id:")
+            and not tag.startswith("classification:")
+            and not tag.startswith("failure_type:")
+            and not tag.startswith("historical_trend:")
         ]
         jira = result.get("jira") or {}
         has_jira = bool(jira.get("has_issue", False))
@@ -581,7 +584,7 @@ class DatadogPublisher:
                 ),
                 self._table_widget(
                     "Failed API Classification",
-                    "sum:api_test.current_fail_count{status:fail} by {service,test,failure_type,http_status}",
+                    "sum:api_test.current_fail_count{status:fail} by {service,test,http_status}",
                     aggregator="last",
                 ),
                 self._table_widget(

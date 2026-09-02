@@ -162,7 +162,7 @@ jobs:
           HISTORICAL_LOOKBACK_DAYS: "10"
           FAILURE_PERSISTENT_THRESHOLD: "0.70"
           FAILURE_FLAKY_MIN_ALTERNATIONS: "2"
-          FAILURE_OCCURRENCE_THRESHOLD: "6"
+          FAILURE_OCCURRENCE_THRESHOLD: "3"
           RESOLUTION_SUCCESS_THRESHOLD: "3"
 
           # This workflow is intended to publish live metrics and create/update

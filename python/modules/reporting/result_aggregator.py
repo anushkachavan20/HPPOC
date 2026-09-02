@@ -184,7 +184,7 @@ class ResultAggregator:
         has_jira_issue = bool(
             jira.get(
                 "has_jira_issue",
-                False,
+                jira.get("has_issue", False),
             )
         )
 

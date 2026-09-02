@@ -336,6 +336,7 @@ class DatadogClient:
         service: str,
         test: str,
         limit: int = 10,
+        exclude_execution_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Retrieve previous executions of a specific API test.
@@ -350,6 +351,9 @@ class DatadogClient:
             f'AND tags:"test:{test.lower()}"'
         )
 
+        if exclude_execution_id:
+            query += f' AND -tags:"execution_id:{exclude_execution_id}"'
+
         logger.debug(
             "Searching historical executions for service=%s, test=%s",
             service,
@@ -358,19 +362,35 @@ class DatadogClient:
 
         events = self.query_events(
             query=query,
-            page_size=limit + 1,
+            page_size=(limit * 2) + 1,
             sort="timestamp_desc",
         )
 
-        # The most recent event can represent the current execution,
-        # depending on when the historical query is performed.
-        #
-        # Keep the existing behavior of ignoring the first result when
-        # more than `limit` results are returned.
-        if len(events) > limit:
-            events = events[1:]
+        unique_events = []
+        execution_ids = set()
 
-        return events[:limit]
+        for event in events:
+            event_execution_id = None
+            for tag in event.get("tags", []):
+                if isinstance(tag, str) and tag.startswith("execution_id:"):
+                    event_execution_id = tag.split(":", 1)[1]
+                    break
+
+            if event_execution_id == exclude_execution_id:
+                continue
+
+            if event_execution_id and event_execution_id in execution_ids:
+                continue
+
+            if event_execution_id:
+                execution_ids.add(event_execution_id)
+
+            unique_events.append(event)
+
+            if len(unique_events) >= limit:
+                break
+
+        return unique_events
 
     # ------------------------------------------------------------------
     # Health Check

@@ -102,7 +102,9 @@ class DatadogPublisher:
         metrics_published = 0
 
         metrics.extend(self._build_service_summary_metrics(results))
+        metrics.extend(self._build_run_service_summary_metrics(results))
         metrics.extend(self._build_run_summary_metrics(results))
+        metrics.extend(self._build_run_jira_summary_metrics(results))
 
         if metrics:
             try:
@@ -476,6 +478,83 @@ class DatadogPublisher:
             },
         ]
 
+    def _build_run_service_summary_metrics(
+        self,
+        results: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Build latest-run service totals for dashboard summary cards."""
+        timestamp = int(time.time())
+        services = {}
+
+        for result in results:
+            service = result.get("service", "unknown")
+            services.setdefault(service, False)
+            if str(result.get("status", "")).upper() != "PASS":
+                services[service] = True
+
+        total_services = len(services)
+        failed_services = sum(1 for failed in services.values() if failed)
+
+        return [
+            {
+                "metric": "api_test.run_total_services",
+                "type": "gauge",
+                "points": [[timestamp, total_services]],
+                "tags": list(DATADOG_TAGS),
+            },
+            {
+                "metric": "api_test.run_passed_services",
+                "type": "gauge",
+                "points": [[timestamp, total_services - failed_services]],
+                "tags": list(DATADOG_TAGS),
+            },
+            {
+                "metric": "api_test.run_failed_services",
+                "type": "gauge",
+                "points": [[timestamp, failed_services]],
+                "tags": list(DATADOG_TAGS),
+            },
+        ]
+
+    def _build_run_jira_summary_metrics(
+        self,
+        results: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Build latest-run Jira totals for dashboard summary cards."""
+        timestamp = int(time.time())
+        jira_issues = 0
+        actions = {"CREATE": 0, "UPDATE": 0}
+
+        for result in results:
+            jira = result.get("jira") or {}
+            if jira.get("has_issue", jira.get("has_jira_issue", False)):
+                jira_issues += 1
+
+            action = str(jira.get("jira_action", "")).upper()
+            if action in actions:
+                actions[action] += 1
+
+        return [
+            {
+                "metric": "api_test.run_jira_issues_found",
+                "type": "gauge",
+                "points": [[timestamp, jira_issues]],
+                "tags": list(DATADOG_TAGS),
+            },
+            {
+                "metric": "api_test.run_jira_issues_to_create",
+                "type": "gauge",
+                "points": [[timestamp, actions["CREATE"]]],
+                "tags": list(DATADOG_TAGS),
+            },
+            {
+                "metric": "api_test.run_jira_issues_to_update",
+                "type": "gauge",
+                "points": [[timestamp, actions["UPDATE"]]],
+                "tags": list(DATADOG_TAGS),
+            },
+        ]
+
     def _publish_dashboard(self) -> str:
         """Create or update the standard API Automation Health dashboard."""
         dashboard = {
@@ -487,12 +566,12 @@ class DatadogPublisher:
                 self._query_value_widget("Passed APIs", "avg:api_test.run_passed_apis{*}", aggregator="last"),
                 self._query_value_widget("Failed APIs", "avg:api_test.run_failed_apis{*}", aggregator="last"),
                 self._query_value_widget("Failure Occurrences", "avg:api_test.run_failure_occurrences{*}", aggregator="last"),
-                self._query_value_widget("Total Services", "avg:api_test.total_services{*}"),
-                self._query_value_widget("Passed Services", "avg:api_test.passed_services{*}"),
-                self._query_value_widget("Failed Services", "avg:api_test.failed_services{*}"),
-                self._query_value_widget("Jira Issues Found", "sum:api_test.jira_issue_count{jira_issue:true}"),
-                self._query_value_widget("Jira Issues To Create", "sum:api_test.jira_action_count{jira_action:create}"),
-                self._query_value_widget("Jira Issues To Update", "sum:api_test.jira_action_count{jira_action:update}"),
+                self._query_value_widget("Total Services", "avg:api_test.run_total_services{*}", aggregator="last"),
+                self._query_value_widget("Passed Services", "avg:api_test.run_passed_services{*}", aggregator="last"),
+                self._query_value_widget("Failed Services", "avg:api_test.run_failed_services{*}", aggregator="last"),
+                self._query_value_widget("Jira Issues Found", "avg:api_test.run_jira_issues_found{*}", aggregator="last"),
+                self._query_value_widget("Jira Issues To Create", "avg:api_test.run_jira_issues_to_create{*}", aggregator="last"),
+                self._query_value_widget("Jira Issues To Update", "avg:api_test.run_jira_issues_to_update{*}", aggregator="last"),
                 self._timeseries_widget("Service Health", "avg:api_test.analysis_result{*} by {service}"),
                 self._timeseries_widget("HTTP Status Breakdown", "sum:api_test.execution_count{*} by {http_status}"),
                 self._timeseries_widget("Failure Classifications", "sum:api_test.failure_occurrence_count{status:fail} by {failure_type}"),

@@ -202,6 +202,7 @@ class APIAnalysisEngine:
                         self.historical_analyzer.analyze_test_history(
                             service=service,
                             test=test_name,
+                            exclude_execution_id=k6_execution.k6_meta.execution_id,
                         )
                     )
 

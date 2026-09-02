@@ -29,6 +29,7 @@ class HistoricalAnalyzer:
         service: str,
         test: str,
         limit: int = 10,
+        exclude_execution_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Analyze historical executions for one API test.
@@ -58,6 +59,7 @@ class HistoricalAnalyzer:
                 service=service,
                 test=test,
                 limit=limit,
+                exclude_execution_id=exclude_execution_id,
             )
         except Exception as exc:
             logger.error(

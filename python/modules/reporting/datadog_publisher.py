@@ -692,12 +692,12 @@ class DatadogPublisher:
                     aggregator="last",
                 ),
                 self._event_stream_widget(
-                    "Latest API Analysis",
-                    'tags:"analyzer:poc" AND tags:"test_type:k6"',
+                    "Current Failed APIs",
+                    'tags:"analyzer:poc" AND tags:"test_type:k6" AND tags:"status:fail"',
                 ),
-                self._table_widget(
-                    "Jira Actions",
-                    "sum:api_test.jira_action_count{jira_action:create OR jira_action:update} by {service,test,jira_action,jira_issue_key}",
+                self._event_stream_widget(
+                    "Jira Recommendations",
+                    'tags:"analyzer:poc" AND tags:"test_type:k6" AND (tags:"jira_action:create" OR tags:"jira_action:update" OR tags:"jira_action:resolve")',
                 ),
             ],
         }

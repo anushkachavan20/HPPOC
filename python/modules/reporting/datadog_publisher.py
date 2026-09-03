@@ -373,12 +373,6 @@ class DatadogPublisher:
                 "tags": current_tags,
             },
             {
-                "metric": "api_test.current_fail_count",
-                "type": "gauge",
-                "points": [[timestamp, 1 if status == "FAIL" else 0]],
-                "tags": current_tags + ["status:fail"],
-            },
-            {
                 "metric": "api_test.response_time_ms",
                 "type": "gauge",
                 "points": [[timestamp, result.get("duration_ms", 0)]],
@@ -410,10 +404,21 @@ class DatadogPublisher:
                 "type": "count",
                 "points": [[timestamp, 1 if status == "FAIL" else 0]],
                 "tags": current_tags + [
+                    "status:fail",
                     f"failure_threshold:{FAILURE_OCCURRENCE_THRESHOLD}"
                 ],
             },
         ]
+
+        if status == "FAIL":
+            metrics.append(
+                {
+                    "metric": "api_test.current_fail_count",
+                    "type": "gauge",
+                    "points": [[timestamp, 1]],
+                    "tags": current_tags + ["status:fail"],
+                }
+            )
 
         return metrics
 
@@ -473,8 +478,22 @@ class DatadogPublisher:
             if str(result.get("status", "")).upper() == "PASS"
         )
         failed_apis = total_apis - passed_apis
+        historical_failure_occurrences = sum(
+            int((result.get("historical") or {}).get("failed", 0) or 0)
+            for result in results
+        )
+        current_failure_occurrences = failed_apis
 
         return [
+            {
+                "metric": "api_test.run_failure_occurrences",
+                "type": "gauge",
+                "points": [[
+                    timestamp,
+                    historical_failure_occurrences + current_failure_occurrences,
+                ]],
+                "tags": list(DATADOG_TAGS),
+            },
             {
                 "metric": "api_test.run_total_apis",
                 "type": "gauge",
@@ -582,7 +601,7 @@ class DatadogPublisher:
                 self._query_value_widget("Total APIs", "avg:api_test.run_total_apis{*}", aggregator="last"),
                 self._query_value_widget("Passed APIs", "avg:api_test.run_passed_apis{*}", aggregator="last"),
                 self._query_value_widget("Failed APIs", "avg:api_test.run_failed_apis{*}", aggregator="last"),
-                self._query_value_widget("Failure Occurrences", "sum:api_test.failure_occurrence_total{status:fail}", aggregator="sum"),
+                self._query_value_widget("Failure Occurrences", "avg:api_test.run_failure_occurrences{*}", aggregator="last"),
                 self._query_value_widget("Total Services", "avg:api_test.run_total_services{*}", aggregator="last"),
                 self._query_value_widget("Passed Services", "avg:api_test.run_passed_services{*}", aggregator="last"),
                 self._query_value_widget("Failed Services", "avg:api_test.run_failed_services{*}", aggregator="last"),

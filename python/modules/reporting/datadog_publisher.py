@@ -616,13 +616,13 @@ class DatadogPublisher:
                 self._timeseries_widget("API Response Time", "avg:api_test.response_time_ms{*} by {service}"),
                 self._table_widget(
                     "Service Health",
-                    "sum:api_test.current_pass_count{*} by {service}",
-                    "sum:api_test.current_fail_count{status:fail} by {service}",
+                    "max:api_test.current_pass_count{*} by {service}",
+                    "max:api_test.current_fail_count{status:fail} by {service}",
                     aggregator="last",
                 ),
                 self._table_widget(
                     "Failed API Classification",
-                    "sum:api_test.current_fail_count{status:fail} by {service,test,http_status}",
+                    "max:api_test.current_fail_count{status:fail} by {service,test,http_status}",
                     aggregator="last",
                 ),
                 self._table_widget(

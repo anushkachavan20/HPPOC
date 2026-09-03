@@ -382,6 +382,24 @@ class DatadogPublisher:
                 "points": [[timestamp, state_code]],
                 "tags": current_tags,
             },
+            *[
+                {
+                    "metric": f"api_test.current_state_{state}_v2",
+                    "type": "gauge",
+                    "points": [[
+                        timestamp,
+                        1 if state_code == code else 0,
+                    ]],
+                    "tags": current_tags,
+                }
+                for state, code in {
+                    "healthy": 0,
+                    "new_failure": 1,
+                    "flaky_failure": 2,
+                    "persistent_failure": 3,
+                    "resolved_failure": 4,
+                }.items()
+            ],
             {
                 "metric": "api_test.response_time_ms",
                 "type": "gauge",
@@ -676,8 +694,12 @@ class DatadogPublisher:
                     aggregator="last",
                 ),
                 self._table_widget(
-                    "Failed API Classification",
-                    "max:api_test.current_failure_classification_v2{status:fail} by {service,test,failure_type,http_status}",
+                    "Current API State",
+                    "avg:api_test.current_state_healthy_v2{*} by {service,test}",
+                    "avg:api_test.current_state_new_failure_v2{*} by {service,test}",
+                    "avg:api_test.current_state_flaky_failure_v2{*} by {service,test}",
+                    "avg:api_test.current_state_persistent_failure_v2{*} by {service,test}",
+                    "avg:api_test.current_state_resolved_failure_v2{*} by {service,test}",
                     aggregator="last",
                 ),
                 self._table_widget(

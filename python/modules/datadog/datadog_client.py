@@ -204,21 +204,11 @@ class DatadogClient:
         back we search.
         """
 
-        url = f"{self.base_url}/api/v1/events"
-
         end_time = int(time.time())
 
         start_time = end_time - (
             HISTORICAL_LOOKBACK_DAYS * 24 * 60 * 60
         )
-
-        params = {
-            "start": start_time,
-            "end": end_time,
-            "query": query,
-            "page_size": page_size,
-            "sort": sort,
-        }
 
         logger.debug(
             "Querying Datadog events from %s to %s",
@@ -227,9 +217,55 @@ class DatadogClient:
         )
 
         try:
+            response = self.session.post(
+                f"{self.base_url}/api/v2/events/search",
+                json={
+                    "filter": {
+                        "query": query,
+                        "from": start_time,
+                        "to": end_time,
+                    },
+                    "page": {"limit": page_size},
+                    "sort": "timestamp_desc",
+                },
+                timeout=30,
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                events = []
+                for item in data.get("data", []):
+                    attributes = item.get("attributes", {})
+                    events.append(
+                        {
+                            "title": attributes.get("title", ""),
+                            "text": attributes.get("message", ""),
+                            "tags": attributes.get("tags", []),
+                            "timestamp": attributes.get("timestamp"),
+                        }
+                    )
+
+                logger.debug(
+                    "Retrieved %d Datadog events",
+                    len(events),
+                )
+                return events
+
+            logger.warning(
+                "Datadog v2 event search failed: %s - %s; trying v1",
+                response.status_code,
+                response.text,
+            )
+
             response = self.session.get(
-                url,
-                params=params,
+                f"{self.base_url}/api/v1/events",
+                params={
+                    "start": start_time,
+                    "end": end_time,
+                    "query": query,
+                    "page_size": page_size,
+                    "sort": sort,
+                },
                 timeout=30,
             )
 

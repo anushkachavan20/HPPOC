@@ -323,6 +323,7 @@ class DatadogPublisher:
         current_tags = [
             tag for tag in tags
             if not tag.startswith("execution_id:")
+            and not tag.startswith("status:")
             and not tag.startswith("classification:")
             and not tag.startswith("failure_type:")
             and not tag.startswith("historical_trend:")
@@ -366,10 +367,16 @@ class DatadogPublisher:
                 "tags": tags,
             },
             {
+                "metric": "api_test.current_pass_count",
+                "type": "gauge",
+                "points": [[timestamp, 1 if status == "PASS" else 0]],
+                "tags": current_tags,
+            },
+            {
                 "metric": "api_test.current_fail_count",
                 "type": "gauge",
                 "points": [[timestamp, 1 if status == "FAIL" else 0]],
-                "tags": current_tags,
+                "tags": current_tags + ["status:fail"],
             },
             {
                 "metric": "api_test.response_time_ms",
@@ -588,8 +595,9 @@ class DatadogPublisher:
                 self._timeseries_widget("API Response Time", "avg:api_test.response_time_ms{*} by {service}"),
                 self._table_widget(
                     "Service Health",
-                    "sum:api_test.pass_count{*} by {service}",
-                    "sum:api_test.fail_count{*} by {service}",
+                    "sum:api_test.current_pass_count{*} by {service}",
+                    "sum:api_test.current_fail_count{status:fail} by {service}",
+                    aggregator="last",
                 ),
                 self._table_widget(
                     "Failed API Classification",

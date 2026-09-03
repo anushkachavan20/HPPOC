@@ -225,68 +225,37 @@ class DatadogPublisher:
         else:
             alert_type = "error"
 
-        title = (
-            f"API Test Analysis: "
-            f"{status} - {service}/{test_name}"
-        )
+        title = f"{service}/{test_name}: {classification}"
 
         text_lines = [
-            "API Test Analysis Result",
-            "",
-            f"Service: {service}",
-            f"Test: {test_name}",
             f"Status: {status}",
             f"HTTP Status: {http_status}",
-            f"Duration: {duration_ms} ms",
-            f"Classification: {classification}",
             f"Jira Action: {jira_action}",
-            f"Execution ID: {execution_id}",
-            "",
-            "Historical Analysis:",
-            f"  Executions: {historical_executions}",
-            f"  Pass Rate: {historical_pass_rate:.2f}%",
-            f"  Failure Rate: {historical_failure_rate:.2f}%",
-            f"  Trend: {historical_trend}",
         ]
 
         if error_message:
             text_lines.extend(
-                [
-                    "",
-                    "Error:",
-                    str(error_message),
-                ]
+                [f"Error: {str(error_message)}"]
             )
 
         if jira_issue:
             text_lines.extend(
                 [
-                    "",
-                    "Jira:",
-                    f"  Issue: {jira_issue}",
+                    f"Jira Issue: {jira_issue}",
                 ]
             )
 
             if jira_summary:
-                text_lines.append(
-                    f"  Summary: {jira_summary}"
-                )
+                text_lines.append(f"Jira Summary: {jira_summary}")
 
             if jira_url:
-                text_lines.append(
-                    f"  URL: {jira_url}"
-                )
+                text_lines.append(f"Jira URL: {jira_url}")
         else:
             text_lines.extend(
-                [
-                    "",
-                    "Jira:",
-                    f"  Action: {jira_action}",
-                    f"  Recommendation: {jira_recommendation}",
-                ]
+                [f"Recommendation: {jira_recommendation}"]
             )
 
-        tags = self._build_tags(result)
+        tags = self._build_tags(result) + ["event_type:analysis"]
 
         return {
             "title": title,
@@ -693,11 +662,11 @@ class DatadogPublisher:
                 ),
                 self._event_stream_widget(
                     "Current Failed APIs",
-                    'tags:"analyzer:poc" AND tags:"test_type:k6" AND tags:"status:fail"',
+                    'tags:"event_type:analysis" AND tags:"status:fail"',
                 ),
                 self._event_stream_widget(
                     "Jira Recommendations",
-                    'tags:"analyzer:poc" AND tags:"test_type:k6" AND (tags:"jira_action:create" OR tags:"jira_action:update" OR tags:"jira_action:resolve")',
+                    'tags:"event_type:analysis" AND (tags:"jira_action:create" OR tags:"jira_action:update" OR tags:"jira_action:resolve")',
                 ),
             ],
         }

@@ -370,7 +370,7 @@ class DatadogPublisher:
                 "tags": tags,
             },
             {
-                "metric": "api_test.current_pass_count",
+                    "metric": "api_test.current_pass_count_v2",
                 "type": "gauge",
                 "points": [[timestamp, 1 if status == "PASS" else 0]],
                 "tags": current_tags,
@@ -416,7 +416,7 @@ class DatadogPublisher:
         if status == "FAIL":
             metrics.append(
                 {
-                    "metric": "api_test.current_fail_count",
+                    "metric": "api_test.current_fail_count_v2",
                     "type": "gauge",
                     "points": [[timestamp, 1]],
                     "tags": current_tags + ["status:fail"],
@@ -424,7 +424,7 @@ class DatadogPublisher:
             )
             metrics.append(
                 {
-                    "metric": "api_test.current_failure_classification",
+                    "metric": "api_test.current_failure_classification_v2",
                     "type": "gauge",
                     "points": [[timestamp, 1]],
                     "tags": [
@@ -592,7 +592,7 @@ class DatadogPublisher:
             ):
                 metrics.append(
                     {
-                        "metric": f"api_test.run_service_{name}_apis",
+                        "metric": f"api_test.run_service_{name}_apis_v2",
                         "type": "gauge",
                         "points": [[timestamp, value]],
                         "tags": tags,
@@ -621,19 +621,19 @@ class DatadogPublisher:
 
         return [
             {
-                "metric": "api_test.run_jira_issues_found",
+                "metric": "api_test.run_jira_issues_found_v2",
                 "type": "gauge",
                 "points": [[timestamp, jira_issues]],
                 "tags": list(DATADOG_TAGS),
             },
             {
-                "metric": "api_test.run_jira_issues_to_create",
+                "metric": "api_test.run_jira_issues_to_create_v2",
                 "type": "gauge",
                 "points": [[timestamp, actions["CREATE"]]],
                 "tags": list(DATADOG_TAGS),
             },
             {
-                "metric": "api_test.run_jira_issues_to_update",
+                "metric": "api_test.run_jira_issues_to_update_v2",
                 "type": "gauge",
                 "points": [[timestamp, actions["UPDATE"]]],
                 "tags": list(DATADOG_TAGS),
@@ -654,22 +654,22 @@ class DatadogPublisher:
                 self._query_value_widget("Total Services", "avg:api_test.run_total_services{*}", aggregator="last"),
                 self._query_value_widget("Passed Services", "avg:api_test.run_passed_services{*}", aggregator="last"),
                 self._query_value_widget("Failed Services", "avg:api_test.run_failed_services{*}", aggregator="last"),
-                self._query_value_widget("Jira Issues Found", "avg:api_test.run_jira_issues_found{*}", aggregator="last"),
-                self._query_value_widget("Jira Issues To Create", "avg:api_test.run_jira_issues_to_create{*}", aggregator="last"),
-                self._query_value_widget("Jira Issues To Update", "avg:api_test.run_jira_issues_to_update{*}", aggregator="last"),
+                self._query_value_widget("Jira Issues Found", "avg:api_test.run_jira_issues_found_v2{*}", aggregator="last"),
+                self._query_value_widget("Jira Issues To Create", "avg:api_test.run_jira_issues_to_create_v2{*}", aggregator="last"),
+                self._query_value_widget("Jira Issues To Update", "avg:api_test.run_jira_issues_to_update_v2{*}", aggregator="last"),
                 self._timeseries_widget("Service Health", "avg:api_test.analysis_result{*} by {service}"),
                 self._timeseries_widget("HTTP Status Breakdown", "sum:api_test.execution_count{*} by {http_status}"),
                 self._timeseries_widget("Failure Classifications", "sum:api_test.classified_failure_occurrence{status:fail} by {failure_type}"),
                 self._timeseries_widget("API Response Time", "avg:api_test.response_time_ms{*} by {service}"),
                 self._table_widget(
                     "Service Health",
-                    "avg:api_test.run_service_passed_apis{*} by {service}",
-                    "avg:api_test.run_service_failed_apis{*} by {service}",
+                    "avg:api_test.run_service_passed_apis_v2{*} by {service}",
+                    "avg:api_test.run_service_failed_apis_v2{*} by {service}",
                     aggregator="last",
                 ),
                 self._table_widget(
                     "Failed API Classification",
-                    "max:api_test.current_failure_classification{status:fail} by {service,test,failure_type,http_status}",
+                    "max:api_test.current_failure_classification_v2{status:fail} by {service,test,failure_type,http_status}",
                     aggregator="last",
                 ),
                 self._table_widget(

@@ -322,11 +322,13 @@ class DatadogPublisher:
         tags = self._build_tags(result)
         current_tags = [
             tag for tag in tags
-            if not tag.startswith("execution_id:")
-            and not tag.startswith("status:")
-            and not tag.startswith("classification:")
-            and not tag.startswith("failure_type:")
-            and not tag.startswith("historical_trend:")
+            if tag.startswith((
+                "environment:",
+                "test_type:",
+                "analyzer:",
+                "service:",
+                "test:",
+            ))
         ]
         jira = result.get("jira") or {}
         has_jira = bool(jira.get("has_issue", False))

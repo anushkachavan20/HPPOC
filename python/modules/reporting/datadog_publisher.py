@@ -306,6 +306,8 @@ class DatadogPublisher:
             "jira_action",
             "NONE" if status == "PASS" else "CREATE",
         )
+        if jira_action == "ALREADY_RESOLVED":
+            jira_action = "NONE"
         state_code = self._classification_state_code(classification)
 
         metrics = [
@@ -351,6 +353,18 @@ class DatadogPublisher:
                 "points": [[timestamp, state_code]],
                 "tags": current_tags,
             },
+            *[
+                {
+                    "metric": f"api_test.current_jira_action_{action}_v2",
+                    "type": "gauge",
+                    "points": [[
+                        timestamp,
+                        1 if str(jira_action).upper() == action else 0,
+                    ]],
+                    "tags": current_tags,
+                }
+                for action in ("NONE", "MONITOR", "CREATE", "UPDATE", "RESOLVE")
+            ],
             *[
                 {
                     "metric": f"api_test.current_state_{state}_v2",
@@ -606,10 +620,13 @@ class DatadogPublisher:
 
         for result in results:
             jira = result.get("jira") or {}
-            if jira.get("has_issue", jira.get("has_jira_issue", False)):
+            action = str(jira.get("jira_action", "")).upper()
+            if (
+                jira.get("has_issue", jira.get("has_jira_issue", False))
+                and action not in ("ALREADY_RESOLVED", "NONE")
+            ):
                 jira_issues += 1
 
-            action = str(jira.get("jira_action", "")).upper()
             if action in actions:
                 actions[action] += 1
 
@@ -660,13 +677,22 @@ class DatadogPublisher:
                     "avg:api_test.run_service_failed_apis_v2{*} by {service}",
                     aggregator="last",
                 ),
-                self._event_stream_widget(
-                    "Current Failed APIs",
-                    'tags:"event_type:analysis" AND tags:"status:fail"',
+                self._table_widget(
+                    "Current API State",
+                    "avg:api_test.current_state_healthy_v2{*} by {service,test}",
+                    "avg:api_test.current_state_new_failure_v2{*} by {service,test}",
+                    "avg:api_test.current_state_flaky_failure_v2{*} by {service,test}",
+                    "avg:api_test.current_state_persistent_failure_v2{*} by {service,test}",
+                    "avg:api_test.current_state_resolved_failure_v2{*} by {service,test}",
+                    aggregator="last",
                 ),
-                self._event_stream_widget(
-                    "Jira Recommendations",
-                    'tags:"event_type:analysis" AND (tags:"jira_action:create" OR tags:"jira_action:update" OR tags:"jira_action:resolve")',
+                self._table_widget(
+                    "Current Jira Action",
+                    "avg:api_test.current_jira_action_create_v2{*} by {service,test}",
+                    "avg:api_test.current_jira_action_update_v2{*} by {service,test}",
+                    "avg:api_test.current_jira_action_resolve_v2{*} by {service,test}",
+                    "avg:api_test.current_jira_action_already_resolved_v2{*} by {service,test}",
+                    aggregator="last",
                 ),
             ],
         }

@@ -233,6 +233,14 @@ class JiraCorrelation:
             "",
         )
 
+        issue_status = fields.get("status") or {}
+        status_category = issue_status.get("statusCategory") or {}
+        is_already_resolved = (
+            str(status_category.get("key", "")).lower() == "done"
+            or str(issue_status.get("name", "")).lower()
+            in ("done", "resolved", "closed")
+        )
+
         issue_url = self._build_issue_url(
             issue_key
         )
@@ -248,14 +256,20 @@ class JiraCorrelation:
             "issue_key": issue_key,
             "issue_summary": issue_summary,
             "issue_url": issue_url,
-            "jira_action": "RESOLVE" if is_resolved else "UPDATE",
+            "jira_action": "NONE" if is_already_resolved else (
+                "RESOLVE" if is_resolved else "UPDATE"
+            ),
             "jira_recommendation": (
-                f"Recommend resolving existing Jira issue {issue_key}"
+                f"Jira issue {issue_key} is already resolved"
+                if is_already_resolved
+                else f"Recommend resolving existing Jira issue {issue_key}"
                 if is_resolved
                 else f"Review and update existing Jira issue {issue_key}"
             ),
             "reason": (
-                "Matching Jira issue found"
+                "Matching Jira issue is already resolved"
+                if is_already_resolved
+                else "Matching Jira issue found"
             ),
         }
 

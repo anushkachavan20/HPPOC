@@ -103,6 +103,7 @@ class DatadogPublisher:
 
         metrics.extend(self._build_service_summary_metrics(results))
         metrics.extend(self._build_run_service_summary_metrics(results))
+        metrics.extend(self._build_run_service_api_metrics(results))
         metrics.extend(self._build_run_summary_metrics(results))
         metrics.extend(self._build_run_jira_summary_metrics(results))
 
@@ -421,6 +422,17 @@ class DatadogPublisher:
                     "tags": current_tags + ["status:fail"],
                 }
             )
+            metrics.append(
+                {
+                    "metric": "api_test.current_failure_classification",
+                    "type": "gauge",
+                    "points": [[timestamp, 1]],
+                    "tags": [
+                        tag for tag in tags
+                        if not tag.startswith("execution_id:")
+                    ],
+                }
+            )
 
         return metrics
 
@@ -554,6 +566,41 @@ class DatadogPublisher:
             },
         ]
 
+    def _build_run_service_api_metrics(
+        self,
+        results: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Build latest-run API totals for each service."""
+        timestamp = int(time.time())
+        services = {}
+
+        for result in results:
+            service = result.get("service", "unknown")
+            counts = services.setdefault(service, {"pass": 0, "fail": 0})
+            if str(result.get("status", "")).upper() == "PASS":
+                counts["pass"] += 1
+            else:
+                counts["fail"] += 1
+
+        metrics = []
+        for service, counts in services.items():
+            tags = list(DATADOG_TAGS) + [f"service:{service}"]
+            for name, value in (
+                ("total", counts["pass"] + counts["fail"]),
+                ("passed", counts["pass"]),
+                ("failed", counts["fail"]),
+            ):
+                metrics.append(
+                    {
+                        "metric": f"api_test.run_service_{name}_apis",
+                        "type": "gauge",
+                        "points": [[timestamp, value]],
+                        "tags": tags,
+                    }
+                )
+
+        return metrics
+
     def _build_run_jira_summary_metrics(
         self,
         results: List[Dict[str, Any]],
@@ -616,13 +663,13 @@ class DatadogPublisher:
                 self._timeseries_widget("API Response Time", "avg:api_test.response_time_ms{*} by {service}"),
                 self._table_widget(
                     "Service Health",
-                    "max:api_test.current_pass_count{*} by {service}",
-                    "max:api_test.current_fail_count{status:fail} by {service}",
+                    "avg:api_test.run_service_passed_apis{*} by {service}",
+                    "avg:api_test.run_service_failed_apis{*} by {service}",
                     aggregator="last",
                 ),
                 self._table_widget(
                     "Failed API Classification",
-                    "max:api_test.current_fail_count{status:fail} by {service,test,http_status}",
+                    "max:api_test.current_failure_classification{status:fail} by {service,test,failure_type,http_status}",
                     aggregator="last",
                 ),
                 self._table_widget(

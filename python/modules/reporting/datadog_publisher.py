@@ -337,6 +337,7 @@ class DatadogPublisher:
             "jira_action",
             "NONE" if status == "PASS" else "CREATE",
         )
+        state_code = self._classification_state_code(classification)
 
         metrics = [
             {
@@ -373,6 +374,12 @@ class DatadogPublisher:
                     "metric": "api_test.current_pass_count_v2",
                 "type": "gauge",
                 "points": [[timestamp, 1 if status == "PASS" else 0]],
+                "tags": current_tags,
+            },
+            {
+                "metric": "api_test.current_state_v2",
+                "type": "gauge",
+                "points": [[timestamp, state_code]],
                 "tags": current_tags,
             },
             {
@@ -659,7 +666,8 @@ class DatadogPublisher:
                 self._query_value_widget("Jira Issues To Update", "avg:api_test.run_jira_issues_to_update_v2{*}", aggregator="last"),
                 self._timeseries_widget("Service Health", "avg:api_test.analysis_result{*} by {service}"),
                 self._timeseries_widget("HTTP Status Breakdown", "sum:api_test.execution_count{*} by {http_status}"),
-                self._timeseries_widget("Failure Classifications", "sum:api_test.classified_failure_occurrence{status:fail} by {failure_type}"),
+                self._timeseries_widget("Failure Classification History", "sum:api_test.classified_failure_occurrence{status:fail} by {failure_type}"),
+                self._timeseries_widget("Current API State", "avg:api_test.current_state_v2{*} by {service,test}"),
                 self._timeseries_widget("API Response Time", "avg:api_test.response_time_ms{*} by {service}"),
                 self._table_widget(
                     "Service Health",
@@ -870,6 +878,18 @@ class DatadogPublisher:
             return str(classification)
 
         return "Unknown"
+
+    @staticmethod
+    def _classification_state_code(classification: str) -> int:
+        """Encode the latest state in a stable metric series."""
+        codes = {
+            "healthy": 0,
+            "new failure": 1,
+            "flaky failure": 2,
+            "persistent failure": 3,
+            "resolved failure": 4,
+        }
+        return codes.get(str(classification).strip().lower(), -1)
 
     def _normalize_tag_value(
         self,

@@ -166,6 +166,8 @@ class DatadogPublisher:
             "execution_id",
             "unknown",
         )
+        window_id = result.get("window_id")
+        idempotency_key = result.get("idempotency_key")
 
         http_status = result.get("http_status", 0)
         duration_ms = result.get("duration_ms", 0)
@@ -309,6 +311,7 @@ class DatadogPublisher:
         if jira_action == "ALREADY_RESOLVED":
             jira_action = "NONE"
         state_code = self._classification_state_code(classification)
+        jira_action_code = self._jira_action_code(jira_action)
 
         metrics = [
             {
@@ -351,6 +354,12 @@ class DatadogPublisher:
                 "metric": "api_test.current_state_v2",
                 "type": "gauge",
                 "points": [[timestamp, state_code]],
+                "tags": current_tags,
+            },
+            {
+                "metric": "api_test.current_jira_action_v2",
+                "type": "gauge",
+                "points": [[timestamp, jira_action_code]],
                 "tags": current_tags,
             },
             *[
@@ -678,20 +687,13 @@ class DatadogPublisher:
                     aggregator="last",
                 ),
                 self._table_widget(
-                    "Current API State",
-                    "avg:api_test.current_state_healthy_v2{*} by {service,test}",
-                    "avg:api_test.current_state_new_failure_v2{*} by {service,test}",
-                    "avg:api_test.current_state_flaky_failure_v2{*} by {service,test}",
-                    "avg:api_test.current_state_persistent_failure_v2{*} by {service,test}",
-                    "avg:api_test.current_state_resolved_failure_v2{*} by {service,test}",
+                    "Current API State (0 Healthy, 1 New, 2 Flaky, 3 Persistent, 4 Resolved)",
+                    "avg:api_test.current_state_v2{*} by {service,test}",
                     aggregator="last",
                 ),
                 self._table_widget(
-                    "Current Jira Action",
-                    "avg:api_test.current_jira_action_create_v2{*} by {service,test}",
-                    "avg:api_test.current_jira_action_update_v2{*} by {service,test}",
-                    "avg:api_test.current_jira_action_resolve_v2{*} by {service,test}",
-                    "avg:api_test.current_jira_action_already_resolved_v2{*} by {service,test}",
+                    "Current Jira Action (0 None, 1 Monitor, 2 Create, 3 Update, 4 Resolve)",
+                    "avg:api_test.current_jira_action_v2{*} by {service,test}",
                     aggregator="last",
                 ),
             ],
@@ -823,6 +825,8 @@ class DatadogPublisher:
             "execution_id",
             "unknown",
         )
+        window_id = result.get("window_id")
+        idempotency_key = result.get("idempotency_key")
 
         classification = self._get_classification(result)
 
@@ -853,6 +857,8 @@ class DatadogPublisher:
                 f"test:{test_name}",
                 f"status:{status}",
                 f"execution_id:{execution_id}",
+                *([f"window_id:{window_id}"] if window_id else []),
+                *([f"idempotency_key:{idempotency_key}"] if idempotency_key else []),
                 f"classification:{self._normalize_tag_value(classification)}",
                 f"historical_trend:{self._normalize_tag_value(trend)}",
                 f"jira_issue:{str(has_jira).lower()}",
@@ -911,6 +917,17 @@ class DatadogPublisher:
             "resolved failure": 4,
         }
         return codes.get(str(classification).strip().lower(), -1)
+
+    @staticmethod
+    def _jira_action_code(action: str) -> int:
+        codes = {
+            "NONE": 0,
+            "MONITOR": 1,
+            "CREATE": 2,
+            "UPDATE": 3,
+            "RESOLVE": 4,
+        }
+        return codes.get(str(action).strip().upper(), -1)
 
     def _normalize_tag_value(
         self,

@@ -164,6 +164,7 @@ jobs:
           FAILURE_FLAKY_MIN_ALTERNATIONS: "2"
           FAILURE_OCCURRENCE_THRESHOLD: "3"
           RESOLUTION_SUCCESS_THRESHOLD: "3"
+          AGGREGATION_WINDOW_MINUTES: "30"
 
           # This workflow is intended to publish live metrics and create/update
           # the Datadog dashboard. Use --dry-run locally when needed.
@@ -210,4 +211,5 @@ jobs:
             python/**/*.log
             python/*.log
             python/reports/analysis_report.txt
+            python/reports/analysis_results.json
           if-no-files-found: ignore

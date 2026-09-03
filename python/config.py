@@ -118,6 +118,13 @@ SLOW_RESPONSE_THRESHOLD_MS = float(
     )
 )
 
+AGGREGATION_WINDOW_MINUTES = int(
+    os.getenv(
+        "AGGREGATION_WINDOW_MINUTES",
+        "30"
+    )
+)
+
 # Dry-run mode
 DRY_RUN = (
     os.getenv(

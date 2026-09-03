@@ -390,6 +390,15 @@ class DatadogPublisher:
                 "tags": tags + [f"jira_action:{self._normalize_tag_value(jira_action)}"],
             },
             {
+                "metric": "api_test.classified_failure_occurrence",
+                "type": "count",
+                "points": [[timestamp, 1 if status == "FAIL" else 0]],
+                "tags": [
+                    tag for tag in tags
+                    if not tag.startswith("execution_id:")
+                ],
+            },
+            {
                 "metric": "api_test.failure_occurrence_total",
                 "type": "count",
                 "points": [[timestamp, 1 if status == "FAIL" else 0]],
@@ -575,7 +584,7 @@ class DatadogPublisher:
                 self._query_value_widget("Jira Issues To Update", "avg:api_test.run_jira_issues_to_update{*}", aggregator="last"),
                 self._timeseries_widget("Service Health", "avg:api_test.analysis_result{*} by {service}"),
                 self._timeseries_widget("HTTP Status Breakdown", "sum:api_test.execution_count{*} by {http_status}"),
-                self._timeseries_widget("Failure Classifications", "sum:api_test.failure_occurrence_total{status:fail} by {failure_type}"),
+                self._timeseries_widget("Failure Classifications", "sum:api_test.classified_failure_occurrence{status:fail} by {failure_type}"),
                 self._timeseries_widget("API Response Time", "avg:api_test.response_time_ms{*} by {service}"),
                 self._table_widget(
                     "Service Health",

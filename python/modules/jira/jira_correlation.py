@@ -9,6 +9,7 @@ import logging
 from typing import Any, Dict, Optional
 
 from modules.jira.jira_client import JiraClient
+from config import SLOW_RESPONSE_THRESHOLD_MS
 
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,13 @@ class JiraCorrelation:
             None,
         )
 
+        failure_type = self._get_failure_type(
+            status=status,
+            http_status=http_status,
+            error=error,
+            duration_ms=getattr(test_result, "duration_ms", 0),
+        )
+
         # --------------------------------------------------------------
         # Passing APIs are checked only after consecutive successes
         # qualify them for a Jira resolution recommendation.
@@ -109,6 +117,7 @@ class JiraCorrelation:
             test_name=test_name,
             http_status=http_status,
             classification=classification_name,
+            failure_type=failure_type,
         )
 
         logger.info(
@@ -153,6 +162,16 @@ class JiraCorrelation:
         # --------------------------------------------------------------
         # No matching issue
         # --------------------------------------------------------------
+
+        issues = [
+            issue for issue in (issues or [])
+            if self._matches_failure_signature(
+                issue=issue,
+                service=service,
+                test_name=test_name,
+                failure_type=failure_type,
+            )
+        ]
 
         if not issues:
             logger.info(
@@ -250,6 +269,7 @@ class JiraCorrelation:
         test_name: str,
         http_status: Optional[int] = None,
         classification: Optional[str] = None,
+        failure_type: Optional[str] = None,
     ) -> str:
         """
         Build a Jira JQL query.
@@ -267,9 +287,13 @@ class JiraCorrelation:
         )
 
         clauses = [
-            f'summary ~ "{service_value}"',
-            f'summary ~ "{test_value}"',
+            f'labels = "service:{service_value}"',
+            f'labels = "api:{test_value}"',
         ]
+
+        if failure_type:
+            failure_value = self._escape_jql_value(failure_type)
+            clauses.append(f'labels = "failure-type:{failure_value}"')
 
         # HTTP status and classification are recorded in the result and
         # recommendation, but should not be required in the Jira summary.
@@ -292,6 +316,59 @@ class JiraCorrelation:
             )
 
         return " AND ".join(clauses)
+
+    @staticmethod
+    def _get_failure_type(
+        status: str,
+        http_status: Optional[int],
+        error: Optional[str],
+        duration_ms: Any,
+    ) -> Optional[str]:
+        if status != "FAIL":
+            return None
+
+        error_text = str(error or "").lower()
+        if "timeout" in error_text or http_status in (408, 504):
+            return "timeout"
+
+        if http_status == 401:
+            return "authentication"
+        if http_status == 403:
+            return "authorization"
+        if http_status == 404:
+            return "not-found"
+        if http_status == 429:
+            return "rate-limit"
+        if isinstance(http_status, int) and 500 <= http_status <= 599:
+            return "server-error"
+
+        try:
+            if float(duration_ms or 0) > SLOW_RESPONSE_THRESHOLD_MS:
+                return "slow-response"
+        except (TypeError, ValueError):
+            pass
+
+        return "http-error"
+
+    @staticmethod
+    def _matches_failure_signature(
+        issue: Dict[str, Any],
+        service: str,
+        test_name: str,
+        failure_type: Optional[str],
+    ) -> bool:
+        labels = issue.get("fields", {}).get("labels", [])
+        normalized_labels = {str(label).lower() for label in labels}
+
+        required_labels = {
+            f"service:{service}",
+            f"api:{test_name}",
+        }
+
+        if failure_type:
+            required_labels.add(f"failure-type:{failure_type}")
+
+        return required_labels.issubset(normalized_labels)
 
     # ------------------------------------------------------------------
     # Helpers

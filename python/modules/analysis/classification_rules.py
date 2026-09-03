@@ -103,13 +103,16 @@ class FailureClassifier:
 
         if current_status == "FAIL":
 
+            consecutive_failures = 1
+            for status in statuses:
+                if status != "FAIL":
+                    break
+                consecutive_failures += 1
+
             # ------------------------------------------------
             # Persistent failure
             # ------------------------------------------------
-            if (
-                failure_rate >= self.persistent_threshold
-                or failed >= FAILURE_OCCURRENCE_THRESHOLD
-            ):
+            if consecutive_failures >= FAILURE_OCCURRENCE_THRESHOLD:
                 return "Persistent Failure"
 
             # ------------------------------------------------

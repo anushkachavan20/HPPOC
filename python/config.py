@@ -111,6 +111,13 @@ RESOLUTION_SUCCESS_THRESHOLD = int(
     )
 )
 
+SLOW_RESPONSE_THRESHOLD_MS = float(
+    os.getenv(
+        "SLOW_RESPONSE_THRESHOLD_MS",
+        "1000"
+    )
+)
+
 # Dry-run mode
 DRY_RUN = (
     os.getenv(

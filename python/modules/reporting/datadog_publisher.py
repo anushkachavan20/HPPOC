@@ -804,7 +804,8 @@ class DatadogPublisher:
             "definition": {
                 "title": title,
                 "type": "event_stream",
-                "requests": [{"q": query, "event_size": "l"}],
+                "query": query,
+                "event_size": "l",
             },
         }
 

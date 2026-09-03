@@ -1,0 +1,55 @@
+name: Customer API Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      failure_scenario:
+        description: "Failure scenario"
+        required: false
+        default: "none"
+        type: choice
+        options: [none, 401, 404, 500]
+jobs:
+  customer-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: grafana/setup-k6-action@v1
+      - name: Install dependencies
+        working-directory: python
+        run: pip install -r requirements.txt
+      - name: Run customer k6 tests
+        continue-on-error: true
+        working-directory: k6
+        env:
+          FAIL_SCENARIO: ${{ inputs.failure_scenario || 'none' }}
+        run: k6 run tests/customer_service.js --out json=customer_results.json
+      - name: Analyze and publish customer results
+        working-directory: python
+        env:
+          DATADOG_API_KEY: ${{ secrets.DATADOG_API_KEY }}
+          DATADOG_APP_KEY: ${{ secrets.DATADOG_APP_KEY }}
+          DATADOG_SITE: ${{ secrets.DATADOG_SITE }}
+          DATADOG_DASHBOARD_ID: ${{ secrets.DATADOG_DASHBOARD_ID }}
+          JIRA_API_URL: ${{ secrets.JIRA_API_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+          HISTORICAL_LOOKBACK_DAYS: "10"
+          FAILURE_PERSISTENT_THRESHOLD: "0.70"
+          FAILURE_FLAKY_MIN_ALTERNATIONS: "2"
+          FAILURE_OCCURRENCE_THRESHOLD: "3"
+          RESOLUTION_SUCCESS_THRESHOLD: "3"
+          AGGREGATION_WINDOW_MINUTES: "30"
+          DRY_RUN: "False"
+        run: python main.py --k6-result ../k6/customer_results.json --execution-id "gh_run_${{ github.run_id }}_customer"
+      - name: Upload customer analysis artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: customer-analysis-${{ github.run_id }}
+          path: python/reports/analysis_results.json
+          if-no-files-found: warn

@@ -1,0 +1,54 @@
+name: Aggregate API Analysis Window
+
+on:
+  workflow_dispatch:
+    inputs:
+      window_id:
+        description: "UTC window ID, for example 2026-09-03T10:00Z"
+        required: true
+        type: string
+jobs:
+  aggregate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        working-directory: python
+        run: pip install -r requirements.txt
+      - name: Select closed 30-minute window
+        id: window
+        env:
+          INPUT_WINDOW_ID: ${{ inputs.window_id }}
+        run: |
+          if [ -n "$INPUT_WINDOW_ID" ]; then
+            echo "window_id=$INPUT_WINDOW_ID" >> "$GITHUB_OUTPUT"
+          else
+            python - <<'PY' >> "$GITHUB_OUTPUT"
+          from datetime import datetime, timedelta, timezone
+          now = datetime.now(timezone.utc) - timedelta(minutes=30)
+          minute = (now.minute // 30) * 30
+          window = now.replace(minute=minute, second=0, microsecond=0)
+          print(f"window_id={window.strftime('%Y-%m-%dT%H:%MZ')}")
+          PY
+          fi
+      - name: Build combined report
+        working-directory: python
+        env:
+          DATADOG_API_KEY: ${{ secrets.DATADOG_API_KEY }}
+          DATADOG_APP_KEY: ${{ secrets.DATADOG_APP_KEY }}
+          DATADOG_SITE: ${{ secrets.DATADOG_SITE }}
+          HISTORICAL_LOOKBACK_DAYS: "10"
+          AGGREGATION_WINDOW_MINUTES: "30"
+        run: python aggregate_window.py --window-id "${{ steps.window.outputs.window_id }}"
+      - name: Upload combined report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: combined-analysis-${{ steps.window.outputs.window_id }}
+          path: |
+            python/reports/combined_*.txt
+            python/reports/combined_*.json
+          if-no-files-found: warn

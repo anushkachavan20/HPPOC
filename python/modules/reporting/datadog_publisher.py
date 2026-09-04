@@ -231,6 +231,8 @@ class DatadogPublisher:
 
         text_lines = [
             f"Status: {status}",
+            f"Current State: {classification}",
+            f"Failure Type: {classification}",
             f"HTTP Status: {http_status}",
             f"Jira Action: {jira_action}",
         ]
@@ -686,15 +688,13 @@ class DatadogPublisher:
                     "avg:api_test.run_service_failed_apis_v2{*} by {service}",
                     aggregator="last",
                 ),
-                self._table_widget(
-                    "Current API State (0 Healthy, 1 New, 2 Flaky, 3 Persistent, 4 Resolved)",
-                    "avg:api_test.current_state_v2{*} by {service,test}",
-                    aggregator="last",
+                self._event_stream_widget(
+                    "Current API State (text)",
+                    'tags:"event_type:analysis"',
                 ),
-                self._table_widget(
-                    "Current Jira Action (0 None, 1 Monitor, 2 Create, 3 Update, 4 Resolve)",
-                    "avg:api_test.current_jira_action_v2{*} by {service,test}",
-                    aggregator="last",
+                self._event_stream_widget(
+                    "Current Jira Actions (text)",
+                    'tags:"event_type:analysis" AND tags:"jira_action:*"',
                 ),
             ],
         }

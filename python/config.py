@@ -111,6 +111,13 @@ RESOLUTION_SUCCESS_THRESHOLD = int(
     )
 )
 
+AGGREGATION_WINDOW_MINUTES = int(
+    os.getenv(
+        "AGGREGATION_WINDOW_MINUTES",
+        "30"
+    )
+)
+
 SLOW_RESPONSE_THRESHOLD_MS = float(
     os.getenv(
         "SLOW_RESPONSE_THRESHOLD_MS",

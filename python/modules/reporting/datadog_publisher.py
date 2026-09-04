@@ -658,12 +658,12 @@ class DatadogPublisher:
             "description": "API test health, deterministic failure classifications, and Jira coverage.",
             "layout_type": "ordered",
             "widgets": [
-                self._query_value_widget("Total APIs", "avg:api_test.run_total_apis{*}", aggregator="last"),
-                self._query_value_widget("Passed APIs", "avg:api_test.run_passed_apis{*}", aggregator="last"),
-                self._query_value_widget("Failed APIs", "avg:api_test.run_failed_apis{*}", aggregator="last"),
-                self._query_value_widget("Total Services", "avg:api_test.run_total_services{*}", aggregator="last"),
-                self._query_value_widget("Passed Services", "avg:api_test.run_passed_services{*}", aggregator="last"),
-                self._query_value_widget("Failed Services", "avg:api_test.run_failed_services{*}", aggregator="last"),
+                self._query_value_widget("Total APIs", "avg:api_test.run_total_apis{aggregation:combined}", aggregator="last"),
+                self._query_value_widget("Passed APIs", "avg:api_test.run_passed_apis{aggregation:combined}", aggregator="last"),
+                self._query_value_widget("Failed APIs", "avg:api_test.run_failed_apis{aggregation:combined}", aggregator="last"),
+                self._query_value_widget("Total Services", "avg:api_test.run_total_services{aggregation:combined}", aggregator="last"),
+                self._query_value_widget("Passed Services", "avg:api_test.run_passed_services{aggregation:combined}", aggregator="last"),
+                self._query_value_widget("Failed Services", "avg:api_test.run_failed_services{aggregation:combined}", aggregator="last"),
                 self._query_value_widget("Jira Issues Found", "avg:api_test.run_jira_issues_found_v2{*}", aggregator="last"),
                 self._query_value_widget("Jira Issues To Create", "avg:api_test.run_jira_issues_to_create_v2{*}", aggregator="last"),
                 self._query_value_widget("Jira Issues To Update", "avg:api_test.run_jira_issues_to_update_v2{*}", aggregator="last"),
@@ -673,8 +673,8 @@ class DatadogPublisher:
                 self._timeseries_widget("API Response Time", "avg:api_test.response_time_ms{*} by {service}"),
                 self._table_widget(
                     "Service Health",
-                    "avg:api_test.run_service_passed_apis_v2{*} by {service}",
-                    "avg:api_test.run_service_failed_apis_v2{*} by {service}",
+                    "avg:api_test.run_service_passed_apis_v2{aggregation:combined} by {service}",
+                    "avg:api_test.run_service_failed_apis_v2{aggregation:combined} by {service}",
                     aggregator="last",
                 ),
                 self._event_stream_widget(
@@ -683,7 +683,7 @@ class DatadogPublisher:
                 ),
                 self._event_stream_widget(
                     "Current Jira Action (text)",
-                    'tags:"event_type:analysis" AND tags:"jira_action:*"',
+                    'tags:"event_type:analysis" AND (tags:"jira_action:create" OR tags:"jira_action:update" OR tags:"jira_action:resolve" OR tags:"jira_action:monitor")',
                 ),
             ],
         }

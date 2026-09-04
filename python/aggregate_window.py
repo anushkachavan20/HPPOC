@@ -55,6 +55,9 @@ def event_to_result(event: Dict[str, Any], window_id: str) -> Dict[str, Any]:
     title = str(event.get("title", ""))
     identity, _, classification = title.partition(":")
     service, _, test = identity.strip().partition("/")
+    service = service.strip() or tags.get("service", "unknown")
+    test = test.strip() or tags.get("test", "unknown")
+    classification = classification.strip() or tags.get("classification", "Unknown")
     text = str(event.get("text", ""))
     fields: Dict[str, str] = {}
     for line in text.splitlines():
@@ -101,7 +104,10 @@ def publish_summary_metrics(
         counts = services.setdefault(service, {"pass": 0, "fail": 0})
         counts["pass" if result.get("status") == "PASS" else "fail"] += 1
 
-    base_tags = list(DATADOG_TAGS) + [f"window_id:{window_id}"]
+    base_tags = list(DATADOG_TAGS) + [
+        f"window_id:{window_id}",
+        "aggregation:combined",
+    ]
     metrics = [
         ("run_total_apis", total_apis, base_tags),
         ("run_passed_apis", passed_apis, base_tags),

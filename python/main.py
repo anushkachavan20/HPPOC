@@ -1,4 +1,5 @@
 import argparse
+import json
 import logging
 import sys
 from datetime import datetime, timezone
@@ -378,6 +379,13 @@ class APIAnalysisEngine:
                 encoding="utf-8",
             )
             logger.info("Full analysis report written to %s", report_path)
+
+            results_path = Path(__file__).parent / "reports" / "analysis_results.json"
+            results_path.write_text(
+                json.dumps(aggregated_results, indent=2, default=str) + "\n",
+                encoding="utf-8",
+            )
+            logger.info("Analysis results written to %s", results_path)
 
             print("\n")
             print("=" * 80)

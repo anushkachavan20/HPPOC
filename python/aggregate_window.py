@@ -3,10 +3,11 @@
 import argparse
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any, Dict, List
 
-from config import DATADOG_SITE
+from config import DATADOG_SITE, DATADOG_TAGS
 from logger import setup_logger
 from modules.datadog.datadog_client import DatadogClient
 from modules.reporting.summary_generator import SummaryGenerator
@@ -23,6 +24,10 @@ def tags_to_dict(tags: Any) -> Dict[str, str]:
             key, value = tag.split(":", 1)
             values[key] = value
     return values
+
+
+def has_tag(tags: Any, expected: str) -> bool:
+    return expected in tags if isinstance(tags, list) else expected in str(tags).split(",")
 
 
 def event_to_result(event: Dict[str, Any], window_id: str) -> Dict[str, Any]:
@@ -61,6 +66,52 @@ def event_to_result(event: Dict[str, Any], window_id: str) -> Dict[str, Any]:
     }
 
 
+def publish_summary_metrics(
+    client: DatadogClient,
+    results: List[Dict[str, Any]],
+    window_id: str,
+) -> bool:
+    timestamp = int(time.time())
+    total_apis = len(results)
+    passed_apis = sum(
+        1 for result in results
+        if result.get("status") == "PASS"
+    )
+    failed_apis = total_apis - passed_apis
+    services: Dict[str, Dict[str, int]] = {}
+    for result in results:
+        service = str(result.get("service", "unknown"))
+        counts = services.setdefault(service, {"pass": 0, "fail": 0})
+        counts["pass" if result.get("status") == "PASS" else "fail"] += 1
+
+    base_tags = list(DATADOG_TAGS) + [f"window_id:{window_id}"]
+    metrics = [
+        ("run_total_apis", total_apis, base_tags),
+        ("run_passed_apis", passed_apis, base_tags),
+        ("run_failed_apis", failed_apis, base_tags),
+        ("run_total_services", len(services), base_tags),
+        ("run_passed_services", sum(1 for counts in services.values() if not counts["fail"]), base_tags),
+        ("run_failed_services", sum(1 for counts in services.values() if counts["fail"]), base_tags),
+    ]
+    for service, counts in services.items():
+        service_tags = base_tags + [f"service:{service}"]
+        metrics.extend([
+            ("run_service_total_apis_v2", counts["pass"] + counts["fail"], service_tags),
+            ("run_service_passed_apis_v2", counts["pass"], service_tags),
+            ("run_service_failed_apis_v2", counts["fail"], service_tags),
+        ])
+
+    return client.send_metrics([
+        {
+            "metric": f"api_test.{name}",
+            "type": "gauge",
+            "points": [[timestamp, value]],
+            "tags": tags,
+        }
+        for name, value, tags in metrics
+    ])
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Aggregate one Datadog analysis window")
     parser.add_argument("--window-id", required=True)
@@ -69,11 +120,14 @@ def main() -> int:
 
     setup_logger(log_level="INFO")
     client = DatadogClient()
-    query = (
-        f'tags:"window_id:{args.window_id}" '
-        'AND tags:"event_type:analysis"'
-    )
-    events = client.query_events(query=query, page_size=1000)
+    query = 'tags:"event_type:analysis"'
+    analysis_events = client.query_events(query=query, page_size=1000)
+    expected_window_tag = f"window_id:{args.window_id}"
+    events = [
+        event
+        for event in analysis_events
+        if has_tag(event.get("tags", []), expected_window_tag)
+    ]
 
     unique: Dict[str, Dict[str, Any]] = {}
     for event in events:
@@ -91,7 +145,7 @@ def main() -> int:
         logger.warning(
             "No Datadog analysis events found for window %s with query %s",
             args.window_id,
-            query,
+            f'{query} plus tag "{expected_window_tag}"',
         )
         summary = SummaryGenerator().generate(
             results,
@@ -102,6 +156,11 @@ def main() -> int:
         )
     else:
         summary = SummaryGenerator().generate(results)
+
+    if results and not publish_summary_metrics(client, results, args.window_id):
+        logger.warning(
+            "Combined report was created, but summary metrics could not be published"
+        )
 
     output = args.output or f"reports/combined_{args.window_id.replace(':', '-')}.txt"
     output_path = Path(output)

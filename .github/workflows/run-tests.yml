@@ -54,21 +54,7 @@ jobs:
 
 
       # ---------------------------------------------------------
-      # 5. Compute the shared UTC analysis window
-      # ---------------------------------------------------------
-      - name: Compute shared analysis window
-        id: window
-        run: |
-          python - <<'PY' > "$GITHUB_OUTPUT"
-          from datetime import datetime, timezone
-          now = datetime.now(timezone.utc)
-          minute = (now.minute // 30) * 30
-          window = now.replace(minute=minute, second=0, microsecond=0)
-          print(f"window_id={window.strftime('%Y-%m-%dT%H:%MZ')}")
-          PY
-
-      # ---------------------------------------------------------
-      # 6. Run Customer API tests
+      # 5. Run Customer API tests
       # ---------------------------------------------------------
       - name: Run Customer API tests
         working-directory: k6
@@ -85,7 +71,7 @@ jobs:
 
 
       # ---------------------------------------------------------
-      # 7. Run Order API tests
+      # 6. Run Order API tests
       # ---------------------------------------------------------
       - name: Run Order API tests
         working-directory: k6
@@ -102,7 +88,7 @@ jobs:
 
 
       # ---------------------------------------------------------
-      # 8. Run Payment API tests
+      # 7. Run Payment API tests
       # ---------------------------------------------------------
       - name: Run Payment API tests
         working-directory: k6
@@ -119,7 +105,7 @@ jobs:
 
 
       # ---------------------------------------------------------
-      # 9. Combine native k6 JSON output
+      # 8. Combine native k6 JSON output
       # ---------------------------------------------------------
       - name: Combine k6 results
         working-directory: k6
@@ -157,7 +143,7 @@ jobs:
 
 
       # ---------------------------------------------------------
-      # 10. Run Python analysis
+      # 9. Run Python analysis
       # ---------------------------------------------------------
       - name: Run API analysis
         working-directory: python
@@ -179,7 +165,6 @@ jobs:
           FAILURE_OCCURRENCE_THRESHOLD: "3"
           RESOLUTION_SUCCESS_THRESHOLD: "3"
           AGGREGATION_WINDOW_MINUTES: "30"
-          WINDOW_ID: ${{ steps.window.outputs.window_id }}
 
           # This workflow is intended to publish live metrics and create/update
           # the Datadog dashboard. Use --dry-run locally when needed.
@@ -187,8 +172,6 @@ jobs:
 
         run: |
           echo "Starting API Test Analysis..."
-          echo "Shared window ID: ${WINDOW_ID}"
-
           if [ ! -s ../k6/results.json ]; then
             echo "ERROR: k6/results.json does not exist or is empty"
             exit 1
@@ -196,8 +179,7 @@ jobs:
 
           python main.py \
             --k6-result ../k6/results.json \
-            --execution-id "gh_run_${{ github.run_id }}" \
-            --window-id "${WINDOW_ID}"
+            --execution-id "gh_run_${{ github.run_id }}"
 
 
       # ---------------------------------------------------------

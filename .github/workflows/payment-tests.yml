@@ -1,4 +1,4 @@
-name: Payment API Tests
+name: Payment Service
 
 on:
   workflow_dispatch:

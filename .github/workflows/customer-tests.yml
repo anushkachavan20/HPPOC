@@ -1,4 +1,4 @@
-name: Customer API Tests
+name: Customer Service
 
 on:
   workflow_dispatch:

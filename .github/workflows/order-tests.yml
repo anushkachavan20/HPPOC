@@ -1,4 +1,4 @@
-name: Order API Tests
+name: Order Service
 
 on:
   workflow_dispatch:

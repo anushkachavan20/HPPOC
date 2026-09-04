@@ -92,21 +92,24 @@ export default function () {
 
     group("HTTPBin Service - ServerError", function () {
 
+        const failureStatus = ["401", "404", "500"].includes(failureScenario)
+            ? Number(failureScenario)
+            : 200;
         const response = http.get(
-            `${BASE_URL}/status/${failureScenario === "500" ? "500" : "200"}`,
+            `${BASE_URL}/status/${failureStatus}`,
             {
                 tags: {
                     service: "httpbin",
                     test: "ServerError",
-                    expected_status: failureScenario === "500" ? "500" : "200",
-                    failure_type: failureScenario === "500" ? "server_error" : "none",
+                    expected_status: String(failureStatus),
+                    failure_type: failureStatus === 200 ? "none" : `http_${failureStatus}`,
                 },
             }
         );
 
         check(response, {
                 "ServerError - expected status": (r) =>
-                r.status === (failureScenario === "500" ? 500 : 200),
+                r.status === failureStatus,
         });
 
         console.log(

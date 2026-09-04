@@ -9,6 +9,11 @@ on:
         default: "none"
         type: choice
         options: [none, 401, 404, 500]
+      window_id:
+        description: "Shared UTC window, for example 2026-09-04T08:30Z"
+        required: false
+        default: ""
+        type: string
 jobs:
   order-tests:
     runs-on: ubuntu-latest
@@ -21,6 +26,23 @@ jobs:
       - name: Install dependencies
         working-directory: python
         run: pip install -r requirements.txt
+      - name: Select analysis window
+        id: window
+        env:
+          INPUT_WINDOW_ID: ${{ inputs.window_id }}
+        run: |
+          if [ -n "$INPUT_WINDOW_ID" ]; then
+            echo "window_id=$INPUT_WINDOW_ID" >> "$GITHUB_OUTPUT"
+          else
+            python - <<'PY' >> "$GITHUB_OUTPUT"
+          from datetime import datetime, timezone
+
+          now = datetime.now(timezone.utc)
+          minute = (now.minute // 30) * 30
+          window = now.replace(minute=minute, second=0, microsecond=0)
+          print(f"window_id={window.strftime('%Y-%m-%dT%H:%MZ')}")
+          PY
+          fi
       - name: Run order k6 tests
         continue-on-error: true
         working-directory: k6
@@ -44,8 +66,9 @@ jobs:
           FAILURE_OCCURRENCE_THRESHOLD: "3"
           RESOLUTION_SUCCESS_THRESHOLD: "3"
           AGGREGATION_WINDOW_MINUTES: "30"
+          WINDOW_ID: ${{ steps.window.outputs.window_id }}
           DRY_RUN: "False"
-        run: python main.py --k6-result ../k6/order_results.json --execution-id "gh_run_${{ github.run_id }}_order"
+        run: python main.py --k6-result ../k6/order_results.json --execution-id "gh_run_${{ github.run_id }}_order" --window-id "${WINDOW_ID}"
       - name: Upload order analysis artifact
         if: always()
         uses: actions/upload-artifact@v4

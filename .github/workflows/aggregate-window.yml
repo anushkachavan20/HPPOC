@@ -24,7 +24,7 @@ jobs:
         working-directory: python
         run: pip install -r requirements.txt
 
-      - name: Select closed 30-minute window
+      - name: Select analysis window
         id: window
         env:
           INPUT_WINDOW_ID: ${{ inputs.window_id }}
@@ -33,9 +33,9 @@ jobs:
             echo "window_id=$INPUT_WINDOW_ID" >> "$GITHUB_OUTPUT"
           else
             python - <<'PY' >> "$GITHUB_OUTPUT"
-          from datetime import datetime, timedelta, timezone
+          from datetime import datetime, timezone
 
-          now = datetime.now(timezone.utc) - timedelta(minutes=30)
+          now = datetime.now(timezone.utc)
           minute = (now.minute // 30) * 30
           window = now.replace(
               minute=minute,

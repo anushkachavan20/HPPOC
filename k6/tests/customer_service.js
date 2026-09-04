@@ -87,16 +87,21 @@ export default function () {
 
     group("JSONPlaceholder Service - NotFound", function () {
 
-        const expectedStatus = failureScenario === "404" ? 404 : 200;
-        const requestPath = failureScenario === "404" ? "/posts/999999999" : "/posts/1";
+        const failureStatus = ["401", "404", "500"].includes(failureScenario)
+            ? Number(failureScenario)
+            : 200;
+        const expectedStatus = failureStatus;
+        const requestUrl = failureStatus === 200
+            ? `${BASE_URL}/posts/1`
+            : `https://httpbin.org/status/${failureStatus}`;
         const response = http.get(
-            `${BASE_URL}${requestPath}`,
+            requestUrl,
             {
                 tags: {
                     service: "jsonplaceholder",
                     test: "NotFound",
                     expected_status: String(expectedStatus),
-                    failure_type: failureScenario === "404" ? "not_found" : "none",
+                    failure_type: failureStatus === 200 ? "none" : `http_${failureStatus}`,
                 },
             }
         );

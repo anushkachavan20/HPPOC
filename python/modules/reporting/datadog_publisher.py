@@ -677,22 +677,13 @@ class DatadogPublisher:
                     "avg:api_test.run_service_failed_apis_v2{*} by {service}",
                     aggregator="last",
                 ),
-                self._table_widget(
-                    "Current API State",
-                    "avg:api_test.current_state_healthy_v2{*} by {service,test}",
-                    "avg:api_test.current_state_new_failure_v2{*} by {service,test}",
-                    "avg:api_test.current_state_flaky_failure_v2{*} by {service,test}",
-                    "avg:api_test.current_state_persistent_failure_v2{*} by {service,test}",
-                    "avg:api_test.current_state_resolved_failure_v2{*} by {service,test}",
-                    aggregator="last",
+                self._event_stream_widget(
+                    "Current API State (text)",
+                    'tags:"event_type:analysis"',
                 ),
-                self._table_widget(
-                    "Current Jira Action",
-                    "avg:api_test.current_jira_action_create_v2{*} by {service,test}",
-                    "avg:api_test.current_jira_action_update_v2{*} by {service,test}",
-                    "avg:api_test.current_jira_action_resolve_v2{*} by {service,test}",
-                    "avg:api_test.current_jira_action_already_resolved_v2{*} by {service,test}",
-                    aggregator="last",
+                self._event_stream_widget(
+                    "Current Jira Action (text)",
+                    'tags:"event_type:analysis" AND tags:"jira_action:*"',
                 ),
             ],
         }

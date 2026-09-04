@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -28,6 +29,25 @@ def tags_to_dict(tags: Any) -> Dict[str, str]:
 
 def has_tag(tags: Any, expected: str) -> bool:
     return expected in tags if isinstance(tags, list) else expected in str(tags).split(",")
+
+
+def event_is_in_window(event: Dict[str, Any], window_id: str) -> bool:
+    if has_tag(event.get("tags", []), f"window_id:{window_id}"):
+        return True
+
+    try:
+        window_start = datetime.strptime(window_id, "%Y-%m-%dT%H:%MZ").replace(tzinfo=timezone.utc)
+        event_time = event.get("timestamp")
+        if isinstance(event_time, (int, float)):
+            event_date = datetime.fromtimestamp(
+                event_time / 1000 if event_time > 10_000_000_000 else event_time,
+                tz=timezone.utc,
+            )
+        else:
+            event_date = datetime.fromisoformat(str(event_time).replace("Z", "+00:00"))
+        return window_start <= event_date < window_start + timedelta(minutes=30)
+    except (TypeError, ValueError, OSError):
+        return False
 
 
 def event_to_result(event: Dict[str, Any], window_id: str) -> Dict[str, Any]:
@@ -119,10 +139,9 @@ def main() -> int:
     client = DatadogClient()
     query = 'tags:"event_type:analysis"'
     analysis_events = client.query_events(query=query, page_size=1000)
-    expected_window_tag = f"window_id:{args.window_id}"
     events = [
         event for event in analysis_events
-        if has_tag(event.get("tags", []), expected_window_tag)
+        if event_is_in_window(event, args.window_id)
     ]
 
     unique: Dict[str, Dict[str, Any]] = {}

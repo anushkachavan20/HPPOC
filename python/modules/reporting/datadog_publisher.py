@@ -678,8 +678,8 @@ class DatadogPublisher:
                     aggregator="last",
                 ),
                 self._event_stream_widget(
-                    "Current API State (text)",
-                    'tags:"event_type:analysis"',
+                    "Current API State (failures only)",
+                    'tags:"event_type:analysis" AND tags:"status:fail"',
                 ),
                 self._event_stream_widget(
                     "Current Jira Action (text)",

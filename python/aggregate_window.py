@@ -153,9 +153,9 @@ def main() -> int:
     unique: Dict[str, Dict[str, Any]] = {}
     for event in events:
         result = event_to_result(event, args.window_id)
-        key = result.get("idempotency_key") or ":".join(
+        key = ":".join(
             str(result.get(field, ""))
-            for field in ("window_id", "service", "test", "execution_id")
+            for field in ("window_id", "service", "test")
         )
         existing = unique.get(key)
         if existing is None or str(result.get("timestamp", "")) > str(existing.get("timestamp", "")):

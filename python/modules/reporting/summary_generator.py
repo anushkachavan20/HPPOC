@@ -21,6 +21,7 @@ class SummaryGenerator:
     def generate(
         self,
         results: List[Dict[str, Any]],
+        empty_message: str | None = None,
     ) -> str:
         """
         Generate a readable analysis summary.
@@ -28,13 +29,15 @@ class SummaryGenerator:
         Args:
             results:
                 Aggregated test results from ResultAggregator.
+            empty_message:
+                Optional explicit message when there are no API results.
 
         Returns:
             Multi-line human-readable summary.
         """
 
         if not results:
-            return "No API test results available."
+            return empty_message or "No API test results available."
 
         return self._generate_clean_report(results)
 

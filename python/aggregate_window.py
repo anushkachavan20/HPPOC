@@ -87,7 +87,22 @@ def main() -> int:
             unique[key] = result
 
     results: List[Dict[str, Any]] = list(unique.values())
-    summary = SummaryGenerator().generate(results)
+    if not events:
+        logger.warning(
+            "No Datadog analysis events found for window %s with query %s",
+            args.window_id,
+            query,
+        )
+        summary = SummaryGenerator().generate(
+            results,
+            empty_message=(
+                f"No API test results available for window {args.window_id}. "
+                "No Datadog analysis events were returned for this window."
+            ),
+        )
+    else:
+        summary = SummaryGenerator().generate(results)
+
     output = args.output or f"reports/combined_{args.window_id.replace(':', '-')}.txt"
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)

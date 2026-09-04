@@ -31,6 +31,7 @@ class ResultAggregator:
         classifications: Optional[Dict[str, Any]] = None,
         jira_results: Optional[Dict[str, Any]] = None,
         ai_analyses: Optional[Any] = None,
+        window_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Aggregate all analysis information for every k6 test result.
@@ -53,6 +54,9 @@ class ResultAggregator:
 
             ai_analyses:
                 Optional AI analysis results.
+
+            window_id:
+                Shared UTC aggregation window ID for split workflows.
 
         Returns:
             List of aggregated test-analysis dictionaries.
@@ -90,6 +94,7 @@ class ResultAggregator:
                 jira=jira,
                 ai_analysis=ai_analysis,
                 execution_id=k6_execution.k6_meta.execution_id,
+                window_id=window_id,
             )
 
             aggregated_results.append(result)
@@ -113,6 +118,7 @@ class ResultAggregator:
         jira: Optional[Dict[str, Any]],
         ai_analysis: Optional[Dict[str, Any]],
         execution_id: str,
+        window_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Build the final normalized representation of one test.
@@ -216,6 +222,7 @@ class ResultAggregator:
             # ----------------------------------------------------------
 
             "execution_id": execution_id,
+            "window_id": window_id,
             "service": service,
             "test": test_name,
             "method": test_result.method.upper(),
@@ -226,6 +233,11 @@ class ResultAggregator:
             "error_message": test_result.error or "",
             "response_body": test_result.response_body or "",
             "timestamp": test_result.timestamp,
+            "idempotency_key": (
+                f"{window_id}:{service}:{test_name}:{execution_id}"
+                if window_id
+                else f"{service}:{test_name}:{execution_id}"
+            ),
 
             # ----------------------------------------------------------
             # Historical information

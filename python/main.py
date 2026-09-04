@@ -1,10 +1,11 @@
 import argparse
 import logging
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from config import DRY_RUN, LOG_LEVEL
+from config import AGGREGATION_WINDOW_MINUTES, DRY_RUN, LOG_LEVEL
 from logger import setup_logger
 
 from modules.ingestion.k6_result_parser import K6ResultParser
@@ -117,6 +118,7 @@ class APIAnalysisEngine:
         self,
         k6_result_file: str,
         execution_id: Optional[str] = None,
+        window_id: Optional[str] = None,
     ) -> bool:
         """
         Execute the complete API test analysis pipeline.
@@ -128,6 +130,9 @@ class APIAnalysisEngine:
             execution_id:
                 Optional execution ID. In GitHub Actions this is normally
                 passed as gh_run_<github_run_id>.
+
+            window_id:
+                Shared UTC aggregation window ID for split workflows.
 
         Returns:
             True if the analysis completed successfully.
@@ -343,6 +348,7 @@ class APIAnalysisEngine:
                     classifications=classifications,
                     jira_results=jira_results,
                     ai_analyses=ai_analyses,
+                    window_id=window_id or self._current_window_id(),
                 )
             )
 
@@ -430,6 +436,18 @@ class APIAnalysisEngine:
             )
             return False
 
+    @staticmethod
+    def _current_window_id() -> str:
+        now = datetime.now(timezone.utc)
+        window_minute = (
+            now.minute // AGGREGATION_WINDOW_MINUTES
+        ) * AGGREGATION_WINDOW_MINUTES
+        return now.replace(
+            minute=window_minute,
+            second=0,
+            microsecond=0,
+        ).strftime("%Y-%m-%dT%H:%MZ")
+
 # ----------------------------------------------------------------------
 # Command Line Interface
 # ----------------------------------------------------------------------
@@ -460,6 +478,13 @@ def parse_arguments():
             "Execution ID used to identify this test run. "
             "Example: gh_run_12345"
         ),
+    )
+
+    parser.add_argument(
+        "--window-id",
+        required=False,
+        default=None,
+        help="Shared UTC aggregation window ID; defaults to the current 30-minute window",
     )
 
     parser.add_argument(
@@ -515,6 +540,7 @@ def main():
     success = engine.run_analysis(
         k6_result_file=args.k6_result,
         execution_id=args.execution_id,
+        window_id=args.window_id,
     )
 
     if success:

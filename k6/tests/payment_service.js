@@ -34,21 +34,21 @@ export default function () {
     // Expected: 200
     // =========================================================
 
-    group("HTTPBin Service - Get", function () {
+    group("Payment Service - Get Payment", function () {
 
         const response = http.get(
             `${BASE_URL}/get`,
             {
                 tags: {
-                    service: "httpbin",
-                    test: "Get",
+                    service: "payment",
+                    test: "Get Payment",
                     expected_status: "200",
                 },
             }
         );
 
         check(response, {
-            "Get - HTTP 200": (r) =>
+            "Get Payment - HTTP 200": (r) =>
                 r.status === 200,
         });
     });
@@ -62,21 +62,21 @@ export default function () {
     // We are not sending any fake data.
     // =========================================================
 
-    group("HTTPBin Service - UUID", function () {
+    group("Payment Service - Get Payment ID", function () {
 
         const response = http.get(
             `${BASE_URL}/uuid`,
             {
                 tags: {
-                    service: "httpbin",
-                    test: "UUID",
+                    service: "payment",
+                    test: "Get Payment ID",
                     expected_status: "200",
                 },
             }
         );
 
         check(response, {
-            "UUID - HTTP 200": (r) =>
+            "Get Payment ID - HTTP 200": (r) =>
                 r.status === 200,
         });
     });
@@ -90,7 +90,7 @@ export default function () {
     // No business data is created, modified, or deleted.
     // =========================================================
 
-    group("HTTPBin Service - ServerError", function () {
+    group("Payment Service - Server Error", function () {
 
         const failureStatus = ["401", "404", "500"].includes(failureScenario)
             ? Number(failureScenario)
@@ -99,8 +99,8 @@ export default function () {
             `${BASE_URL}/status/${failureStatus}`,
             {
                 tags: {
-                    service: "httpbin",
-                    test: "ServerError",
+                    service: "payment",
+                    test: "Server Error",
                     expected_status: String(failureStatus),
                     failure_type: failureStatus === 200 ? "none" : `http_${failureStatus}`,
                 },
@@ -108,12 +108,12 @@ export default function () {
         );
 
         check(response, {
-                "ServerError - expected status": (r) =>
+                "Server Error - expected status": (r) =>
                 r.status === failureStatus,
         });
 
         console.log(
-            `HTTPBin ServerError response: HTTP ${response.status}`
+            `Payment Server Error response: HTTP ${response.status}`
         );
     });
 }

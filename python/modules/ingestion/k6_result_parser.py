@@ -89,14 +89,22 @@ class K6ResultParser:
 
         # Current public API test files
         'GetPosts': '/posts',
+        'Get Posts': '/posts',
         'GetPost': '/posts/1',
+        'Get Post': '/posts/1',
         'NotFound': '/posts/999999999',
+        'Not Found': '/posts/999999999',
         'GetUsers': '/api/users?page=2',
+        'Get Users': '/api/users?page=2',
         'GetUser': '/api/users/2',
+        'Get User': '/api/users/2',
         'Unauthorized': '/status/401',
         'Get': '/get',
+        'Get Payment': '/get',
         'UUID': '/uuid',
+        'Get Payment ID': '/uuid',
         'ServerError': '/status/500',
+        'Server Error': '/status/500',
 
         # Customer
         'CreateCustomer': '/customers',

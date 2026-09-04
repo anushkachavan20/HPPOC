@@ -33,14 +33,14 @@ export default function () {
     // Expected: 200
     // =========================================================
 
-    group("ReqRes Service - GetUsers", function () {
+    group("Order Service - Get Users", function () {
 
         const response = http.get(
             `${BASE_URL}/api/users?page=2`,
             {
                 tags: {
-                    service: "reqres",
-                    test: "GetUsers",
+                    service: "order",
+                    test: "Get Users",
                     expected_status: "200",
                 },
             }
@@ -58,14 +58,14 @@ export default function () {
     // Expected: 200
     // =========================================================
 
-    group("ReqRes Service - GetUser", function () {
+    group("Order Service - Get User", function () {
 
         const response = http.get(
             `${BASE_URL}/api/users/2`,
             {
                 tags: {
-                    service: "reqres",
-                    test: "GetUser",
+                    service: "order",
+                    test: "Get User",
                     expected_status: "200",
                 },
             }
@@ -89,7 +89,7 @@ export default function () {
     // later be analyzed by the classification/Ollama layer.
     // =========================================================
 
-    group("ReqRes Service - Unauthorized", function () {
+    group("Order Service - Unauthorized", function () {
 
         const failureStatus = ["401", "404", "500"].includes(failureScenario)
             ? Number(failureScenario)
@@ -100,7 +100,7 @@ export default function () {
                 : `https://httpbin.org/status/${failureStatus}`,
             {
                 tags: {
-                    service: "reqres",
+                    service: "order",
                     test: "Unauthorized",
                     expected_status: String(failureStatus),
                     failure_type: failureStatus === 200 ? "none" : `http_${failureStatus}`,

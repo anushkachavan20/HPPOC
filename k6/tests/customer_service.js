@@ -33,21 +33,21 @@ export default function () {
     // Expected HTTP status: 200
     // =========================================================
 
-    group("JSONPlaceholder Service - GetPosts", function () {
+    group("Customer Service - Get Posts", function () {
 
         const response = http.get(
             `${BASE_URL}/posts`,
             {
                 tags: {
-                    service: "jsonplaceholder",
-                    test: "GetPosts",
+                    service: "customer",
+                    test: "Get Posts",
                     expected_status: "200",
                 },
             }
         );
 
         check(response, {
-            "GetPosts - HTTP 200": (r) =>
+            "Get Posts - HTTP 200": (r) =>
                 r.status === 200,
         });
     });
@@ -57,21 +57,21 @@ export default function () {
     // Expected HTTP status: 200
     // =========================================================
 
-    group("JSONPlaceholder Service - GetPost", function () {
+    group("Customer Service - Get Post", function () {
 
         const response = http.get(
             `${BASE_URL}/posts/1`,
             {
                 tags: {
-                    service: "jsonplaceholder",
-                    test: "GetPost",
+                    service: "customer",
+                    test: "Get Post",
                     expected_status: "200",
                 },
             }
         );
 
         check(response, {
-            "GetPost - HTTP 200": (r) =>
+            "Get Post - HTTP 200": (r) =>
                 r.status === 200,
         });
     });
@@ -85,7 +85,7 @@ export default function () {
     // No data is created, modified, or deleted.
     // =========================================================
 
-    group("JSONPlaceholder Service - NotFound", function () {
+    group("Customer Service - Not Found", function () {
 
         const failureStatus = ["401", "404", "500"].includes(failureScenario)
             ? Number(failureScenario)
@@ -98,8 +98,8 @@ export default function () {
             requestUrl,
             {
                 tags: {
-                    service: "jsonplaceholder",
-                    test: "NotFound",
+                    service: "customer",
+                    test: "Not Found",
                     expected_status: String(expectedStatus),
                     failure_type: failureStatus === 200 ? "none" : `http_${failureStatus}`,
                 },
@@ -107,7 +107,7 @@ export default function () {
         );
 
         check(response, {
-                "NotFound - expected status": (r) =>
+                "Not Found - expected status": (r) =>
                 r.status === expectedStatus,
         });
 

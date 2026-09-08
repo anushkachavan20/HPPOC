@@ -25,6 +25,16 @@ export const options = {
 
 const BASE_URL = "https://httpbin.org";
 const failureScenario = __ENV.FAIL_SCENARIO || "none";
+const failureStatus = ["401", "404", "500"].includes(failureScenario)
+    ? Number(failureScenario)
+    : 200;
+const failureTestName = failureStatus === 401
+    ? "Unauthorized"
+    : failureStatus === 404
+        ? "Not Found"
+        : failureStatus === 500
+            ? "Server Error"
+            : "Payment Check";
 
 export default function () {
 
@@ -90,17 +100,14 @@ export default function () {
     // No business data is created, modified, or deleted.
     // =========================================================
 
-    group("Payment Service - Server Error", function () {
+    group(`Payment Service - ${failureTestName}`, function () {
 
-        const failureStatus = ["401", "404", "500"].includes(failureScenario)
-            ? Number(failureScenario)
-            : 200;
         const response = http.get(
             `${BASE_URL}/status/${failureStatus}`,
             {
                 tags: {
                     service: "payment",
-                    test: "Server Error",
+                    test: failureTestName,
                     expected_status: String(failureStatus),
                     failure_type: failureStatus === 200 ? "none" : `http_${failureStatus}`,
                 },
@@ -108,7 +115,7 @@ export default function () {
         );
 
         check(response, {
-                "Server Error - expected status": (r) =>
+                [`${failureTestName} - expected status`]: (r) =>
                 r.status === failureStatus,
         });
 

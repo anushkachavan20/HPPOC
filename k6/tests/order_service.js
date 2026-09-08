@@ -24,6 +24,16 @@ export const options = {
 
 const BASE_URL = "https://reqres.in";
 const failureScenario = __ENV.FAIL_SCENARIO || "none";
+const failureStatus = ["401", "404", "500"].includes(failureScenario)
+    ? Number(failureScenario)
+    : 200;
+const failureTestName = failureStatus === 401
+    ? "Unauthorized"
+    : failureStatus === 404
+        ? "Not Found"
+        : failureStatus === 500
+            ? "Server Error"
+            : "Order Check";
 
 export default function () {
 
@@ -89,11 +99,8 @@ export default function () {
     // later be analyzed by the classification/Ollama layer.
     // =========================================================
 
-    group("Order Service - Unauthorized", function () {
+    group(`Order Service - ${failureTestName}`, function () {
 
-        const failureStatus = ["401", "404", "500"].includes(failureScenario)
-            ? Number(failureScenario)
-            : 200;
         const response = http.get(
             failureStatus === 200
                 ? `${BASE_URL}/api/users/2`
@@ -101,7 +108,7 @@ export default function () {
             {
                 tags: {
                     service: "order",
-                    test: "Unauthorized",
+                    test: failureTestName,
                     expected_status: String(failureStatus),
                     failure_type: failureStatus === 200 ? "none" : `http_${failureStatus}`,
                 },
@@ -109,12 +116,12 @@ export default function () {
         );
 
         check(response, {
-                "Unauthorized - expected status": (r) =>
+                [`${failureTestName} - expected status`]: (r) =>
                 r.status === failureStatus,
         });
 
         console.log(
-            `ReqRes Unauthorized response: HTTP ${response.status}`
+            `Order ${failureTestName} response: HTTP ${response.status}`
         );
     });
 }

@@ -17,6 +17,7 @@ import json
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 from datetime import datetime
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, validator
 
@@ -99,12 +100,16 @@ class K6ResultParser:
         'GetUser': '/api/users/2',
         'Get User': '/api/users/2',
         'Unauthorized': '/status/401',
+        'Not Found': '/status/404',
+        'Server Error': '/status/500',
+        'Order Check': '/api/users/2',
+        'Customer Check': '/posts/1',
+        'Payment Check': '/status/200',
         'Get': '/get',
         'Get Payment': '/get',
         'UUID': '/uuid',
         'Get Payment ID': '/uuid',
         'ServerError': '/status/500',
-        'Server Error': '/status/500',
 
         # Customer
         'CreateCustomer': '/customers',
@@ -454,15 +459,18 @@ class K6ResultParser:
             # Endpoint
             # ------------------------------------------------
 
-            endpoint = next(
+            request_url = tags.get('url') or tags.get('name') or ''
+            parsed_url = urlparse(str(request_url))
+            endpoint = parsed_url.path or next(
                 (
                     mapped_endpoint
                     for mapped_test, mapped_endpoint
                     in self.ENDPOINT_MAP.items()
                     if mapped_test.lower() == test_name.lower()
                 ),
-                '/',
             )
+            if parsed_url.query:
+                endpoint += f"?{parsed_url.query}"
 
             # ------------------------------------------------
             # Build model

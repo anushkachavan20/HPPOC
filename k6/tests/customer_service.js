@@ -25,6 +25,16 @@ export const options = {
 
 const BASE_URL = "https://jsonplaceholder.typicode.com";
 const failureScenario = __ENV.FAIL_SCENARIO || "none";
+const failureStatus = ["401", "404", "500"].includes(failureScenario)
+    ? Number(failureScenario)
+    : 200;
+const failureTestName = failureStatus === 401
+    ? "Unauthorized"
+    : failureStatus === 404
+        ? "Not Found"
+        : failureStatus === 500
+            ? "Server Error"
+            : "Customer Check";
 
 export default function () {
 
@@ -85,11 +95,8 @@ export default function () {
     // No data is created, modified, or deleted.
     // =========================================================
 
-    group("Customer Service - Not Found", function () {
+    group(`Customer Service - ${failureTestName}`, function () {
 
-        const failureStatus = ["401", "404", "500"].includes(failureScenario)
-            ? Number(failureScenario)
-            : 200;
         const expectedStatus = failureStatus;
         const requestUrl = failureStatus === 200
             ? `${BASE_URL}/posts/1`
@@ -99,7 +106,7 @@ export default function () {
             {
                 tags: {
                     service: "customer",
-                    test: "Not Found",
+                    test: failureTestName,
                     expected_status: String(expectedStatus),
                     failure_type: failureStatus === 200 ? "none" : `http_${failureStatus}`,
                 },
@@ -112,7 +119,7 @@ export default function () {
         });
 
         console.log(
-            `JSONPlaceholder NotFound response: HTTP ${response.status}`
+            `Customer ${failureTestName} response: HTTP ${response.status}`
         );
     });
 }

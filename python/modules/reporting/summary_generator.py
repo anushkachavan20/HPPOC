@@ -62,7 +62,8 @@ class SummaryGenerator:
 
             if status == "FAIL":
                 failed_results.append(result)
-                jira_results.append(result)
+                if (result.get("jira") or {}).get("jira_action") in ("CREATE", "RESOLVE"):
+                    jira_results.append(result)
             elif (
                 classification == "Resolved Failure"
                 and (result.get("jira") or {}).get("jira_action") == "RESOLVE"

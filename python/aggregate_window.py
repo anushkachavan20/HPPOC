@@ -69,6 +69,8 @@ def event_to_result(event: Dict[str, Any], window_id: str) -> Dict[str, Any]:
     jira_action = fields.get("jira action", "NONE").upper()
     jira_key = fields.get("jira issue")
     jira_url = fields.get("jira url")
+    method = fields.get("method", "GET").upper()
+    endpoint = fields.get("endpoint", "")
 
     return {
         "window_id": window_id,
@@ -76,6 +78,8 @@ def event_to_result(event: Dict[str, Any], window_id: str) -> Dict[str, Any]:
         "idempotency_key": tags.get("idempotency_key"),
         "service": service.lower(),
         "test": test.lower(),
+        "method": method,
+        "endpoint": endpoint,
         "status": status,
         "http_status": int(fields.get("http status", "0") or 0),
         "classification": {"pattern": classification.strip() or "Unknown"},
@@ -116,6 +120,14 @@ def publish_summary_metrics(
         ("run_passed_services", sum(1 for counts in services.values() if not counts["fail"]), base_tags),
         ("run_failed_services", sum(1 for counts in services.values() if counts["fail"]), base_tags),
     ]
+    jira_issues = sum(1 for result in results if (result.get("jira") or {}).get("has_issue"))
+    jira_creates = sum(1 for result in results if (result.get("jira") or {}).get("jira_action") == "CREATE")
+    jira_resolves = sum(1 for result in results if (result.get("jira") or {}).get("jira_action") == "RESOLVE")
+    metrics.extend([
+        ("run_jira_issues_found_v2", jira_issues, base_tags),
+        ("run_jira_issues_to_create_v2", jira_creates, base_tags),
+        ("run_jira_issues_to_update_v2", jira_resolves, base_tags),
+    ])
     for service, counts in services.items():
         service_tags = base_tags + [f"service:{service}"]
         metrics.extend([

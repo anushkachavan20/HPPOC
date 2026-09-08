@@ -1,5 +1,6 @@
 import logging
 import time
+from urllib.parse import quote
 from typing import Any, Dict, List
 
 from config import (
@@ -7,6 +8,8 @@ from config import (
     DRY_RUN,
     DATADOG_DASHBOARD_ID,
     FAILURE_OCCURRENCE_THRESHOLD,
+    JIRA_API_URL,
+    JIRA_PROJECT_KEY,
 )
 from modules.datadog.datadog_client import DatadogClient
 
@@ -220,6 +223,15 @@ class DatadogPublisher:
             "",
         )
 
+        jira_create_url = ""
+        if not jira_issue and JIRA_PROJECT_KEY:
+            jira_create_summary = f"[{service}/{test_name}] HTTP {http_status} failure"
+            jira_create_url = (
+                f"{JIRA_API_URL.rstrip('/')}/secure/CreateIssue!default.jspa"
+                f"?project={quote(str(JIRA_PROJECT_KEY))}"
+                f"&summary={quote(jira_create_summary)}"
+            )
+
         if status == "PASS":
             alert_type = "success"
         else:
@@ -229,6 +241,10 @@ class DatadogPublisher:
 
         text_lines = [
             f"Status: {status}",
+            f"Service: {service}",
+            f"Test: {test_name}",
+            f"Method: {result.get('method', 'GET')}",
+            f"Endpoint: {result.get('endpoint', '')}",
             f"HTTP Status: {http_status}",
             f"Jira Action: {jira_action}",
         ]
@@ -251,9 +267,9 @@ class DatadogPublisher:
             if jira_url:
                 text_lines.append(f"Jira URL: {jira_url}")
         else:
-            text_lines.extend(
-                [f"Recommendation: {jira_recommendation}"]
-            )
+            text_lines.append(f"Recommendation: {jira_recommendation}")
+            if jira_create_url and jira_action == "CREATE":
+                text_lines.append(f"Create Jira: {jira_create_url}")
 
         tags = self._build_tags(result) + ["event_type:analysis"]
 
@@ -664,9 +680,9 @@ class DatadogPublisher:
                 self._query_value_widget("Total Services", "avg:api_test.run_total_services{aggregation:combined}", aggregator="last"),
                 self._query_value_widget("Passed Services", "avg:api_test.run_passed_services{aggregation:combined}", aggregator="last"),
                 self._query_value_widget("Failed Services", "avg:api_test.run_failed_services{aggregation:combined}", aggregator="last"),
-                self._query_value_widget("Jira Issues Found", "avg:api_test.run_jira_issues_found_v2{*}", aggregator="last"),
-                self._query_value_widget("Jira Issues To Create", "avg:api_test.run_jira_issues_to_create_v2{*}", aggregator="last"),
-                self._query_value_widget("Jira Issues To Update", "avg:api_test.run_jira_issues_to_update_v2{*}", aggregator="last"),
+                self._query_value_widget("Jira Issues Found", "avg:api_test.run_jira_issues_found_v2{aggregation:combined}", aggregator="last"),
+                self._query_value_widget("Jira Issues To Create", "avg:api_test.run_jira_issues_to_create_v2{aggregation:combined}", aggregator="last"),
+                self._query_value_widget("Jira Issues To Resolve", "avg:api_test.run_jira_issues_to_update_v2{aggregation:combined}", aggregator="last"),
                 self._timeseries_widget("Service Health", "avg:api_test.analysis_result{*} by {service}"),
                 self._timeseries_widget("HTTP Status Breakdown", "sum:api_test.execution_count{*} by {http_status}"),
                 self._timeseries_widget("Failure Classification History", "sum:api_test.classified_failure_occurrence{status:fail} by {failure_type}"),
@@ -683,7 +699,7 @@ class DatadogPublisher:
                 ),
                 self._event_stream_widget(
                     "Current Jira Action (text)",
-                    'tags:"event_type:analysis" AND (tags:"jira_action:create" OR tags:"jira_action:update" OR tags:"jira_action:resolve" OR tags:"jira_action:monitor")',
+                    'tags:"event_type:analysis" AND (tags:"jira_action:create" OR tags:"jira_action:resolve")',
                 ),
             ],
         }

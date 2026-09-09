@@ -62,7 +62,12 @@ class SummaryGenerator:
 
             if status == "FAIL":
                 failed_results.append(result)
-                if (result.get("jira") or {}).get("jira_action") in ("CREATE", "RESOLVE"):
+                jira = result.get("jira") or {}
+                if (
+                    jira.get("jira_action") in ("CREATE", "RESOLVE")
+                    or jira.get("has_issue")
+                    or jira.get("issue_key")
+                ):
                     jira_results.append(result)
             elif (
                 classification == "Resolved Failure"
@@ -150,6 +155,8 @@ class SummaryGenerator:
                     f"{issue:<17} |"
                 )
                 lines.append(f"  Recommendation: {recommendation}")
+                if jira.get("issue_url"):
+                    lines.append(f"  Jira URL: {jira['issue_url']}")
         else:
             lines.append(
                 "| None                 |          |                   |"

@@ -128,6 +128,9 @@ class SummaryGenerator:
                     f"{api_path:<36} | "
                     f"{self._get_classification(result):<18} |"
                 )
+                lines.append(
+                    f"  Endpoint: {result.get('endpoint', '')}"
+                )
         else:
             lines.append("| None                 |                                    |                    |")
 

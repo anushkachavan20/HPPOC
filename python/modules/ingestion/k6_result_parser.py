@@ -461,7 +461,7 @@ class K6ResultParser:
 
             request_url = tags.get('url') or tags.get('name') or ''
             parsed_url = urlparse(str(request_url))
-            endpoint = parsed_url.path or next(
+            mapped_endpoint = next(
                 (
                     mapped_endpoint
                     for mapped_test, mapped_endpoint
@@ -469,8 +469,12 @@ class K6ResultParser:
                     if mapped_test.lower() == test_name.lower()
                 ),
             )
-            if parsed_url.query:
-                endpoint += f"?{parsed_url.query}"
+            if request_url and str(request_url).startswith(("http://", "https://")):
+                endpoint = str(request_url)
+            else:
+                endpoint = parsed_url.path or mapped_endpoint
+                if parsed_url.query:
+                    endpoint += f"?{parsed_url.query}"
 
             # ------------------------------------------------
             # Build model

@@ -36,6 +36,7 @@ class K6TestResult(BaseModel):
 
     service: str
     test_name: str
+    testcase_id: Optional[str] = None
     method: str
     endpoint: str
     status: str
@@ -219,6 +220,13 @@ class K6ResultParser:
                         **data
                     )
 
+                    for item in result.results:
+                        if not item.testcase_id:
+                            item.testcase_id = self._build_testcase_id(
+                                item.service,
+                                item.test_name,
+                            )
+
                     self.logger.info(
                         f"Parsed custom k6 results: "
                         f"{len(result.results)} test results "
@@ -401,6 +409,11 @@ class K6ResultParser:
                 group
             )
 
+            testcase_id = tags.get(
+                'testcase_id',
+                self._build_testcase_id(service, test_name),
+            )
+
             # ------------------------------------------------
             # HTTP status
             # ------------------------------------------------
@@ -484,6 +497,7 @@ class K6ResultParser:
                 K6TestResult(
                     service=service,
                     test_name=test_name,
+                    testcase_id=str(testcase_id),
                     method=method,
                     endpoint=endpoint,
                     status=result_status,
@@ -631,6 +645,19 @@ class K6ResultParser:
 
         return 'unknown'
 
+    @staticmethod
+    def _build_testcase_id(service: str, test_name: str) -> str:
+        """Build a stable fallback ID for result files without testcase tags."""
+        service_code = ''.join(
+            character for character in str(service).upper()
+            if character.isalnum()
+        )[:4] or 'API'
+        test_code = ''.join(
+            character for character in str(test_name).upper()
+            if character.isalnum()
+        )[:24] or 'TEST'
+        return f'{service_code}-{test_code}'
+
     # ========================================================
     # Parse dictionary
     # ========================================================
@@ -693,6 +720,8 @@ class K6ResultParser:
             'service': test.service.lower(),
 
             'test': test.test_name.lower(),
+
+            'testcase_id': test.testcase_id,
 
             'method': test.method.upper(),
 

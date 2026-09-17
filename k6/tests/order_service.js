@@ -51,6 +51,7 @@ export default function () {
                 tags: {
                     service: "order",
                     test: "Get Users",
+                    testcase_id: "ORD-001",
                     expected_status: "200",
                 },
             }
@@ -76,6 +77,7 @@ export default function () {
                 tags: {
                     service: "order",
                     test: "Get User",
+                    testcase_id: "ORD-002",
                     expected_status: "200",
                 },
             }
@@ -109,6 +111,7 @@ export default function () {
                 tags: {
                     service: "order",
                     test: failureTestName,
+                    testcase_id: "ORD-003",
                     expected_status: String(failureStatus),
                     failure_type: failureStatus === 200 ? "none" : `http_${failureStatus}`,
                 },

@@ -50,6 +50,10 @@ class JiraCorrelation:
             getattr(test_result, "test_name", "")
         ).strip().lower()
 
+        testcase_id = str(
+            getattr(test_result, "testcase_id", "") or ""
+        ).strip().upper()
+
         status = str(
             getattr(test_result, "status", "")
         ).strip().upper()
@@ -99,6 +103,7 @@ class JiraCorrelation:
                 "issue_key": None,
                 "issue_summary": None,
                 "issue_url": None,
+                "testcase_id": testcase_id,
                 "jira_action": "NONE",
                 "jira_recommendation": "No Jira action required",
                 "reason": "Test passed - Jira correlation not required",
@@ -115,6 +120,7 @@ class JiraCorrelation:
         jql = self._build_jql(
             service=service,
             test_name=test_name,
+            testcase_id=testcase_id,
             http_status=http_status,
             classification=classification_name,
             failure_type=failure_type,
@@ -154,6 +160,7 @@ class JiraCorrelation:
                 "issue_key": None,
                 "issue_summary": None,
                 "issue_url": None,
+                "testcase_id": testcase_id,
                 "jira_action": "SEARCH_FAILED",
                 "jira_recommendation": "Check Jira credentials and search permissions",
                 "reason": f"Jira search failed: {exc}",
@@ -169,6 +176,7 @@ class JiraCorrelation:
                 issue=issue,
                 service=service,
                 test_name=test_name,
+                testcase_id=testcase_id,
                 failure_type=failure_type,
             )
         ]
@@ -190,6 +198,7 @@ class JiraCorrelation:
                     "issue_key": None,
                     "issue_summary": None,
                     "issue_url": None,
+                    "testcase_id": testcase_id,
                     "jira_action": "NONE",
                     "jira_recommendation": "No existing Jira issue found to resolve",
                     "reason": "Required consecutive passes completed but no matching Jira issue",
@@ -199,7 +208,8 @@ class JiraCorrelation:
 
             if is_persistent:
                 recommendation = (
-                    f"Create a Jira bug for {service}/{test_name} "
+                    f"ATTENTION: Create a Jira bug for testcase {testcase_id} "
+                    f"({service}/{test_name}) "
                     f"(HTTP {http_status}, persistent failure)"
                 )
             else:
@@ -213,6 +223,7 @@ class JiraCorrelation:
                 "issue_key": None,
                 "issue_summary": None,
                 "issue_url": None,
+                "testcase_id": testcase_id,
                 "jira_action": jira_action,
                 "jira_recommendation": recommendation,
                 "reason": "No matching Jira issue found",
@@ -256,6 +267,7 @@ class JiraCorrelation:
             "issue_key": issue_key,
             "issue_summary": issue_summary,
             "issue_url": issue_url,
+            "testcase_id": testcase_id,
             "jira_action": "NONE" if is_already_resolved else (
                 "RESOLVE" if is_resolved else "UPDATE"
             ),
@@ -281,6 +293,7 @@ class JiraCorrelation:
         self,
         service: str,
         test_name: str,
+        testcase_id: str = "",
         http_status: Optional[int] = None,
         classification: Optional[str] = None,
         failure_type: Optional[str] = None,
@@ -301,8 +314,14 @@ class JiraCorrelation:
         )
 
         clauses = [
-            f'labels = "service:{service_value}"',
-            f'labels = "api:{test_value}"',
+            (
+                f'(labels = "testcase:{self._escape_jql_value(testcase_id)}" '
+                f'OR (labels = "service:{service_value}" '
+                f'AND labels = "api:{test_value}") )'
+                if testcase_id
+                else f'labels = "service:{service_value}" '
+                     f'AND labels = "api:{test_value}"'
+            ),
         ]
 
         if failure_type:
@@ -369,20 +388,25 @@ class JiraCorrelation:
         issue: Dict[str, Any],
         service: str,
         test_name: str,
+        testcase_id: str,
         failure_type: Optional[str],
     ) -> bool:
         labels = issue.get("fields", {}).get("labels", [])
         normalized_labels = {str(label).lower() for label in labels}
 
-        required_labels = {
+        testcase_label = f"testcase:{testcase_id}".lower()
+        legacy_labels = {
             f"service:{service}",
             f"api:{test_name}",
         }
 
         if failure_type:
-            required_labels.add(f"failure-type:{failure_type}")
+            legacy_labels.add(f"failure-type:{failure_type}")
 
-        return required_labels.issubset(normalized_labels)
+        return (
+            testcase_id
+            and testcase_label in normalized_labels
+        ) or legacy_labels.issubset(normalized_labels)
 
     # ------------------------------------------------------------------
     # Helpers

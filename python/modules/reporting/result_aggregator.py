@@ -225,6 +225,7 @@ class ResultAggregator:
             "window_id": window_id,
             "service": service,
             "test": test_name,
+            "testcase_id": test_result.testcase_id,
             "method": test_result.method.upper(),
             "endpoint": test_result.endpoint,
             "status": status,
@@ -300,6 +301,10 @@ class ResultAggregator:
                 "issue_key": issue_key,
                 "issue_summary": issue_summary,
                 "issue_url": issue_url,
+                "testcase_id": jira.get(
+                    "testcase_id",
+                    test_result.testcase_id,
+                ),
                 "jira_action": jira.get(
                     "jira_action",
                     "NONE" if status == "PASS" else "MONITOR",

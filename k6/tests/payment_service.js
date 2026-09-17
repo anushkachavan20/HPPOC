@@ -52,6 +52,7 @@ export default function () {
                 tags: {
                     service: "payment",
                     test: "Get Payment",
+                    testcase_id: "PAY-001",
                     expected_status: "200",
                 },
             }
@@ -80,6 +81,7 @@ export default function () {
                 tags: {
                     service: "payment",
                     test: "Get Payment ID",
+                    testcase_id: "PAY-002",
                     expected_status: "200",
                 },
             }
@@ -108,6 +110,7 @@ export default function () {
                 tags: {
                     service: "payment",
                     test: failureTestName,
+                    testcase_id: "PAY-003",
                     expected_status: String(failureStatus),
                     failure_type: failureStatus === 200 ? "none" : `http_${failureStatus}`,
                 },

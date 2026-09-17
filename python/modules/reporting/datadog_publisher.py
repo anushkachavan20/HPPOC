@@ -157,6 +157,7 @@ class DatadogPublisher:
 
         service = result.get("service", "unknown")
         test_name = result.get("test", "unknown")
+        testcase_id = result.get("testcase_id", "")
         status = str(result.get("status", "UNKNOWN")).upper()
 
         classification = self._get_classification(result)
@@ -208,6 +209,11 @@ class DatadogPublisher:
             "NONE" if status == "PASS" else "MONITOR",
         )
 
+        testcase_id = result.get(
+            "testcase_id",
+            jira.get("testcase_id", ""),
+        )
+
         jira_recommendation = jira.get(
             "jira_recommendation",
             "",
@@ -225,7 +231,10 @@ class DatadogPublisher:
 
         jira_create_url = ""
         if not jira_issue and JIRA_PROJECT_KEY:
-            jira_create_summary = f"[{service}/{test_name}] HTTP {http_status} failure"
+            jira_create_summary = (
+                f"[{testcase_id}] [{service}/{test_name}] "
+                f"HTTP {http_status} failure"
+            )
             jira_create_url = (
                 f"{JIRA_API_URL.rstrip('/')}/secure/CreateIssue!default.jspa"
                 f"?project={quote(str(JIRA_PROJECT_KEY))}"
@@ -237,12 +246,14 @@ class DatadogPublisher:
         else:
             alert_type = "error"
 
-        title = f"{service}/{test_name}: {classification}"
+        title_prefix = "[ATTENTION] " if jira_action == "CREATE" else ""
+        title = f"{title_prefix}{service}/{test_name}: {classification}"
 
         text_lines = [
             f"Status: {status}",
             f"Service: {service}",
             f"Test: {test_name}",
+            f"Testcase ID: {testcase_id}",
             f"Method: {result.get('method', 'GET')}",
             f"Endpoint: {result.get('endpoint', '')}",
             f"HTTP Status: {http_status}",
@@ -267,11 +278,18 @@ class DatadogPublisher:
             if jira_url:
                 text_lines.append(f"Jira URL: {jira_url}")
         else:
-            text_lines.append(f"Recommendation: {jira_recommendation}")
+            attention_prefix = "ATTENTION REQUIRED: " if jira_action == "CREATE" else ""
+            text_lines.append(
+                f"Recommendation: {attention_prefix}{jira_recommendation}"
+            )
             if jira_create_url and jira_action == "CREATE":
                 text_lines.append(f"Create Jira: {jira_create_url}")
 
         tags = self._build_tags(result) + ["event_type:analysis"]
+        if testcase_id:
+            tags.append(f"testcase_id:{self._normalize_tag_value(testcase_id)}")
+        if jira_action == "CREATE":
+            tags.append("attention_required:true")
 
         return {
             "title": title,
@@ -674,14 +692,14 @@ class DatadogPublisher:
             "description": "API test health, deterministic failure classifications, and Jira coverage.",
             "layout_type": "ordered",
             "widgets": [
-                self._query_value_widget("Total APIs", "avg:api_test.run_total_apis{aggregation:combined}", aggregator="last"),
-                self._query_value_widget("Passed APIs", "avg:api_test.run_passed_apis{aggregation:combined}", aggregator="last"),
-                self._query_value_widget("Failed APIs", "avg:api_test.run_failed_apis{aggregation:combined}", aggregator="last"),
                 self._query_value_widget("Total Services", "avg:api_test.run_total_services{aggregation:combined}", aggregator="last"),
                 self._query_value_widget("Passed Services", "avg:api_test.run_passed_services{aggregation:combined}", aggregator="last"),
                 self._query_value_widget("Failed Services", "avg:api_test.run_failed_services{aggregation:combined}", aggregator="last"),
+                self._query_value_widget("Total APIs", "avg:api_test.run_total_apis{aggregation:combined}", aggregator="last"),
+                self._query_value_widget("Passed APIs", "avg:api_test.run_passed_apis{aggregation:combined}", aggregator="last"),
+                self._query_value_widget("Failed APIs", "avg:api_test.run_failed_apis{aggregation:combined}", aggregator="last"),
                 self._query_value_widget("Jira Issues Found", "avg:api_test.run_jira_issues_found_v2{aggregation:combined}", aggregator="last"),
-                self._query_value_widget("Jira Issues To Create", "avg:api_test.run_jira_issues_to_create_v2{aggregation:combined}", aggregator="last"),
+                self._query_value_widget("ATTENTION: Jira Issues To Create", "avg:api_test.run_jira_issues_to_create_v2{aggregation:combined}", aggregator="last"),
                 self._query_value_widget("Jira Issues To Resolve", "avg:api_test.run_jira_issues_to_update_v2{aggregation:combined}", aggregator="last"),
                 self._timeseries_widget("Service Health", "avg:api_test.analysis_result{*} by {service}"),
                 self._timeseries_widget("HTTP Status Breakdown", "sum:api_test.execution_count{*} by {http_status}"),
@@ -698,8 +716,8 @@ class DatadogPublisher:
                     'tags:"event_type:analysis" AND tags:"status:fail"',
                 ),
                 self._event_stream_widget(
-                    "Current Jira Action (text)",
-                    'tags:"event_type:analysis" AND (tags:"jira_action:create" OR tags:"jira_action:resolve")',
+                    "ATTENTION: Jira Actions Required",
+                    'tags:"event_type:analysis" AND (tags:"attention_required:true" OR tags:"jira_action:resolve")',
                 ),
             ],
         }
@@ -753,7 +771,12 @@ class DatadogPublisher:
             "definition": {
                 "title": title,
                 "type": "query_value",
+                "precision": 0,
                 "requests": [{"q": query, "aggregator": aggregator}],
+            },
+            "layout": {
+                "width": 4,
+                "height": 2,
             },
         }
 
@@ -821,6 +844,7 @@ class DatadogPublisher:
 
         service = result.get("service", "unknown")
         test_name = result.get("test", "unknown")
+        testcase_id = result.get("testcase_id", "")
 
         status = str(
             result.get("status", "UNKNOWN")
@@ -858,6 +882,7 @@ class DatadogPublisher:
             [
                 f"service:{service}",
                 f"test:{test_name}",
+                *([f"testcase_id:{self._normalize_tag_value(testcase_id)}"] if testcase_id else []),
                 f"status:{status}",
                 f"execution_id:{execution_id}",
                 f"classification:{self._normalize_tag_value(classification)}",

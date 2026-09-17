@@ -51,6 +51,7 @@ export default function () {
                 tags: {
                     service: "customer",
                     test: "Get Posts",
+                    testcase_id: "CUS-001",
                     expected_status: "200",
                 },
             }
@@ -75,6 +76,7 @@ export default function () {
                 tags: {
                     service: "customer",
                     test: "Get Post",
+                    testcase_id: "CUS-002",
                     expected_status: "200",
                 },
             }
@@ -107,6 +109,7 @@ export default function () {
                 tags: {
                     service: "customer",
                     test: failureTestName,
+                    testcase_id: "CUS-003",
                     expected_status: String(expectedStatus),
                     failure_type: failureStatus === 200 ? "none" : `http_${failureStatus}`,
                 },

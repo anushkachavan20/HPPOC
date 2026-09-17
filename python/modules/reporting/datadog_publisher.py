@@ -720,17 +720,17 @@ class DatadogPublisher:
         for index, widget in enumerate(widgets):
             if index < 9:
                 widget["layout"] = {
-                    "x": (index % 3) * 4,
-                    "y": (index // 3) * 2,
-                    "width": 4,
-                    "height": 2,
+                    "x": (index % 3) * 8,
+                    "y": (index // 3) * 4,
+                    "width": 8,
+                    "height": 4,
                 }
             else:
                 widget["layout"] = {
-                    "x": ((index - 9) % 2) * 6,
-                    "y": 6 + ((index - 9) // 2) * 6,
-                    "width": 6,
-                    "height": 5,
+                    "x": ((index - 9) % 2) * 12,
+                    "y": 12 + ((index - 9) // 2) * 6,
+                    "width": 12,
+                    "height": 6,
                 }
 
         dashboard = {

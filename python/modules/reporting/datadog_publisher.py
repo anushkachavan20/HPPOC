@@ -687,39 +687,57 @@ class DatadogPublisher:
 
     def _publish_dashboard(self) -> str:
         """Create or update the standard API Automation Health dashboard."""
+        widgets = [
+            self._query_value_widget("Total Services", "avg:api_test.run_total_services{aggregation:combined}", aggregator="last"),
+            self._query_value_widget("Passed Services", "avg:api_test.run_passed_services{aggregation:combined}", aggregator="last"),
+            self._query_value_widget("Failed Services", "avg:api_test.run_failed_services{aggregation:combined}", aggregator="last"),
+            self._query_value_widget("Total APIs", "avg:api_test.run_total_apis{aggregation:combined}", aggregator="last"),
+            self._query_value_widget("Passed APIs", "avg:api_test.run_passed_apis{aggregation:combined}", aggregator="last"),
+            self._query_value_widget("Failed APIs", "avg:api_test.run_failed_apis{aggregation:combined}", aggregator="last"),
+            self._query_value_widget("Jira Issues Found", "avg:api_test.run_jira_issues_found_v2{aggregation:combined}", aggregator="last"),
+            self._query_value_widget("ATTENTION: Jira Issues To Create", "avg:api_test.run_jira_issues_to_create_v2{aggregation:combined}", aggregator="last"),
+            self._query_value_widget("Jira Issues To Resolve", "avg:api_test.run_jira_issues_to_update_v2{aggregation:combined}", aggregator="last"),
+            self._timeseries_widget("Service Health", "avg:api_test.analysis_result{*} by {service}"),
+            self._timeseries_widget("HTTP Status Breakdown", "sum:api_test.execution_count{*} by {http_status}"),
+            self._timeseries_widget("Failure Classification History", "sum:api_test.classified_failure_occurrence{status:fail} by {failure_type}"),
+            self._timeseries_widget("API Response Time", "avg:api_test.response_time_ms{*} by {service}"),
+            self._table_widget(
+                "Service Health",
+                "avg:api_test.run_service_passed_apis_v2{aggregation:combined} by {service}",
+                "avg:api_test.run_service_failed_apis_v2{aggregation:combined} by {service}",
+                aggregator="last",
+            ),
+            self._event_stream_widget(
+                "Current API State (failures only)",
+                'tags:"event_type:analysis" AND tags:"status:fail"',
+            ),
+            self._event_stream_widget(
+                "ATTENTION: Jira Actions Required",
+                'tags:"event_type:analysis" AND (tags:"attention_required:true" OR tags:"jira_action:resolve")',
+            ),
+        ]
+
+        for index, widget in enumerate(widgets):
+            if index < 9:
+                widget["layout"] = {
+                    "x": (index % 3) * 4,
+                    "y": (index // 3) * 2,
+                    "width": 4,
+                    "height": 2,
+                }
+            else:
+                widget["layout"] = {
+                    "x": ((index - 9) % 2) * 6,
+                    "y": 6 + ((index - 9) // 2) * 6,
+                    "width": 6,
+                    "height": 5,
+                }
+
         dashboard = {
             "title": "API Automation Health Dashboard",
             "description": "API test health, deterministic failure classifications, and Jira coverage.",
-            "layout_type": "ordered",
-            "widgets": [
-                self._query_value_widget("Total Services", "avg:api_test.run_total_services{aggregation:combined}", aggregator="last"),
-                self._query_value_widget("Passed Services", "avg:api_test.run_passed_services{aggregation:combined}", aggregator="last"),
-                self._query_value_widget("Failed Services", "avg:api_test.run_failed_services{aggregation:combined}", aggregator="last"),
-                self._query_value_widget("Total APIs", "avg:api_test.run_total_apis{aggregation:combined}", aggregator="last"),
-                self._query_value_widget("Passed APIs", "avg:api_test.run_passed_apis{aggregation:combined}", aggregator="last"),
-                self._query_value_widget("Failed APIs", "avg:api_test.run_failed_apis{aggregation:combined}", aggregator="last"),
-                self._query_value_widget("Jira Issues Found", "avg:api_test.run_jira_issues_found_v2{aggregation:combined}", aggregator="last"),
-                self._query_value_widget("ATTENTION: Jira Issues To Create", "avg:api_test.run_jira_issues_to_create_v2{aggregation:combined}", aggregator="last"),
-                self._query_value_widget("Jira Issues To Resolve", "avg:api_test.run_jira_issues_to_update_v2{aggregation:combined}", aggregator="last"),
-                self._timeseries_widget("Service Health", "avg:api_test.analysis_result{*} by {service}"),
-                self._timeseries_widget("HTTP Status Breakdown", "sum:api_test.execution_count{*} by {http_status}"),
-                self._timeseries_widget("Failure Classification History", "sum:api_test.classified_failure_occurrence{status:fail} by {failure_type}"),
-                self._timeseries_widget("API Response Time", "avg:api_test.response_time_ms{*} by {service}"),
-                self._table_widget(
-                    "Service Health",
-                    "avg:api_test.run_service_passed_apis_v2{aggregation:combined} by {service}",
-                    "avg:api_test.run_service_failed_apis_v2{aggregation:combined} by {service}",
-                    aggregator="last",
-                ),
-                self._event_stream_widget(
-                    "Current API State (failures only)",
-                    'tags:"event_type:analysis" AND tags:"status:fail"',
-                ),
-                self._event_stream_widget(
-                    "ATTENTION: Jira Actions Required",
-                    'tags:"event_type:analysis" AND (tags:"attention_required:true" OR tags:"jira_action:resolve")',
-                ),
-            ],
+            "layout_type": "free",
+            "widgets": widgets,
         }
 
         if self.dry_run:
@@ -773,10 +791,6 @@ class DatadogPublisher:
                 "type": "query_value",
                 "precision": 0,
                 "requests": [{"q": query, "aggregator": aggregator}],
-            },
-            "layout": {
-                "width": 4,
-                "height": 2,
             },
         }
 

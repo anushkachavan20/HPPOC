@@ -246,8 +246,8 @@ class DatadogPublisher:
         else:
             alert_type = "error"
 
-        title_prefix = "[ATTENTION] " if jira_action == "CREATE" else ""
-        title = f"{title_prefix}{service}/{test_name}: {classification}"
+        title_prefix = "❗ " if jira_action == "CREATE" else ""
+        title = f"{title_prefix}{testcase_id} | {service}/{test_name}: {classification}"
 
         text_lines = [
             f"Status: {status}",
@@ -528,6 +528,7 @@ class DatadogPublisher:
     ) -> List[Dict[str, Any]]:
         """Build latest-run totals so dashboard cards do not sum history."""
         timestamp = int(time.time())
+        results = self._deduplicate_api_results(results)
         total_apis = len(results)
         passed_apis = sum(
             1 for result in results
@@ -576,6 +577,7 @@ class DatadogPublisher:
     ) -> List[Dict[str, Any]]:
         """Build latest-run service totals for dashboard summary cards."""
         timestamp = int(time.time())
+        results = self._deduplicate_api_results(results)
         services = {}
 
         for result in results:
@@ -614,6 +616,7 @@ class DatadogPublisher:
     ) -> List[Dict[str, Any]]:
         """Build latest-run API totals for each service."""
         timestamp = int(time.time())
+        results = self._deduplicate_api_results(results)
         services = {}
 
         for result in results:
@@ -649,6 +652,7 @@ class DatadogPublisher:
     ) -> List[Dict[str, Any]]:
         """Build latest-run Jira totals for dashboard summary cards."""
         timestamp = int(time.time())
+        results = self._deduplicate_api_results(results)
         jira_issues = 0
         actions = {"CREATE": 0, "UPDATE": 0}
 
@@ -684,6 +688,21 @@ class DatadogPublisher:
                 "tags": list(DATADOG_TAGS),
             },
         ]
+
+    @staticmethod
+    def _deduplicate_api_results(
+        results: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Keep one record per testcase so duplicate k6 points do not inflate totals."""
+        unique = {}
+        for result in results:
+            testcase_id = str(result.get("testcase_id", "")).strip().lower()
+            key = testcase_id or ":".join(
+                str(result.get(field, "")).strip().lower()
+                for field in ("service", "test", "endpoint")
+            )
+            unique[key] = result
+        return list(unique.values())
 
     def _publish_dashboard(self) -> str:
         """Create or update the standard API Automation Health dashboard."""

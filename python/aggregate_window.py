@@ -69,6 +69,7 @@ def event_to_result(event: Dict[str, Any], window_id: str) -> Dict[str, Any]:
     jira_action = fields.get("jira action", "NONE").upper()
     jira_key = fields.get("jira issue")
     jira_url = fields.get("jira url")
+    testcase_id = fields.get("testcase id", tags.get("testcase_id"))
     method = fields.get("method", "GET").upper()
     endpoint = fields.get("endpoint", "")
 
@@ -78,6 +79,7 @@ def event_to_result(event: Dict[str, Any], window_id: str) -> Dict[str, Any]:
         "idempotency_key": tags.get("idempotency_key"),
         "service": service.lower(),
         "test": test.lower(),
+        "testcase_id": testcase_id,
         "method": method,
         "endpoint": endpoint,
         "status": status,
@@ -167,7 +169,7 @@ def main() -> int:
         result = event_to_result(event, args.window_id)
         key = ":".join(
             str(result.get(field, ""))
-            for field in ("window_id", "service", "test")
+            for field in ("window_id", "testcase_id", "service", "test")
         )
         existing = unique.get(key)
         if existing is None or str(result.get("timestamp", "")) > str(existing.get("timestamp", "")):
